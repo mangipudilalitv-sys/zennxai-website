@@ -1,0 +1,76 @@
+import { NextResponse } from "next/server";
+import { supabase } from "../../lib/supabase";
+
+export async function POST(req: Request) {
+  try {
+    const { leadId } = await req.json();
+
+    if (!leadId) {
+      return NextResponse.json(
+        { success: false, error: "Missing leadId" },
+        { status: 400 }
+      );
+    }
+
+    const { data: lead, error: leadError } = await supabase
+      .from("leads")
+      .select("*")
+      .eq("id", Number(leadId))
+      .maybeSingle();
+
+    if (leadError || !lead) {
+      return NextResponse.json(
+        { success: false, error: "Lead not found" },
+        { status: 404 }
+      );
+    }
+
+    const { error: updateError } = await supabase
+      .from("leads")
+      .update({
+        status: "escalated",
+        urgency: "high",
+      })
+      .eq("id", Number(leadId));
+
+    if (updateError) {
+      return NextResponse.json(
+        { success: false, error: updateError.message },
+        { status: 500 }
+      );
+    }
+
+    const { error: taskError } = await supabase.from("tasks").insert([
+      {
+        lead_id: Number(leadId),
+        company_name: lead.business_name || "Unknown Business",
+        task_title: "Urgent Escalation Review",
+        task_description:
+          "This lead was escalated and needs immediate follow-up, prioritization, and operational review.",
+        priority: "high",
+        assigned_agent: "ZennX Escalation Operator",
+        due_time: "immediately",
+        status: "pending",
+      },
+    ]);
+
+    if (taskError) {
+      return NextResponse.json(
+        { success: false, error: taskError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Lead escalated successfully",
+    });
+  } catch (error) {
+    console.error("ESCALATE LEAD ERROR:", error);
+
+    return NextResponse.json(
+      { success: false, error: "Escalation failed" },
+      { status: 500 }
+    );
+  }
+}

@@ -1,253 +1,153 @@
-"use client";
+import Link from "next/link";
+import { Cormorant_Garamond } from "next/font/google";
 
-import { useState } from "react";
-import { supabase } from "./lib/supabaseClient";
+const luxurySerif = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+});
 
-export default function Home() {
-  const [showForm, setShowForm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [formData, setFormData] = useState({
-    full_name: "",
-    phone: "",
-    email: "",
-    business_name: "",
-    service_requested: "",
-  });
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
-
-  const handleBooking = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setSubmitting(true);
-
-    const { error } = await supabase.from("leads").insert([
-      {
-        full_name: formData.full_name,
-        phone: formData.phone,
-        email: formData.email,
-        business_name: formData.business_name,
-        service_requested: formData.service_requested,
-        status: "new",
-      },
-    ]);
-
-    setSubmitting(false);
-
-    if (error) {
-      alert(error.message);
-      console.error("SUPABASE ERROR:", error);
-      return;
-    }
-
-    alert("Demo request submitted successfully.");
-
-    setFormData({
-      full_name: "",
-      phone: "",
-      email: "",
-      business_name: "",
-      service_requested: "",
-    });
-
-    setShowForm(false);
-  };
-
+export default function HomePage() {
   return (
-    <main className="min-h-screen bg-black text-white">
-      <section className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8">
-        <nav className="flex items-center justify-between">
-          <div className="text-xl font-bold tracking-tight">ZennX AI</div>
+    <main className="relative min-h-screen overflow-hidden bg-[#020202] text-[#fff5df]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,217,138,0.16),transparent_40%)]" />
 
-          <a
-            href="mailto:hello@zennxai.com"
-            className="rounded-full border border-white/20 px-5 py-2 text-sm text-white/80 hover:bg-white hover:text-black"
-          >
-            Contact
-          </a>
-        </nav>
+      <div className="absolute left-[-10%] top-[-10%] h-[500px] w-[500px] rounded-full bg-[#ffd98a]/10 blur-[140px]" />
 
-        <div className="flex flex-1 flex-col items-start justify-center">
-          <p className="mb-4 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70">
-            AI Operations Infrastructure
-          </p>
+      <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-[#ffd98a]/5 blur-[160px]" />
 
-          <h1 className="max-w-4xl text-5xl font-bold tracking-tight md:text-7xl">
-            AI front desk systems for businesses that can’t afford to miss leads.
-          </h1>
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1600px] flex-col justify-center px-6 py-12">
+        <div className="grid items-center gap-8 xl:grid-cols-[1.1fr_0.9fr]">
+          <section className="rounded-[32px] border border-white/10 bg-[#050505]/90 p-10 shadow-[0_0_80px_rgba(0,0,0,0.6)] backdrop-blur-xl xl:p-14">
+            <div className="inline-flex items-center gap-3 rounded-full border border-[#ffd98a]/30 bg-[#ffd98a]/5 px-5 py-2">
+              <div className="h-2 w-2 rounded-full bg-[#ffd98a]" />
 
-          <p className="mt-6 max-w-2xl text-lg text-white/70 md:text-xl">
-            ZennX AI helps local businesses respond instantly, qualify leads,
-            automate follow-ups, and book appointments using AI-powered
-            operational workflows.
-          </p>
+              <span className="text-xs uppercase tracking-[0.35em] text-[#ffd98a]">
+                ZennX Sovereign Command
+              </span>
+            </div>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="rounded-full bg-white px-6 py-3 font-medium text-black hover:bg-white/80"
+            <h1
+              className={`${luxurySerif.className} mt-10 text-[5.5rem] font-bold leading-[0.85] tracking-[-0.06em] xl:text-[7rem]`}
             >
-              Book a Demo
-            </button>
+              Universal
+              <br />
+              Operational
+              <br />
+              Intelligence
+              <span className="text-[#ffd98a]">.</span>
+            </h1>
 
-            <a
-              href="#how-it-works"
-              className="rounded-full border border-white/20 px-6 py-3 font-medium text-white/80 hover:bg-white/10"
-            >
-              See How It Works
-            </a>
-          </div>
+            <p className="mt-10 max-w-[700px] text-lg leading-[1.9] text-white/60">
+              Autonomous infrastructure for companies. Memory,
+              execution chains, operator routing, health monitoring,
+              AI workforce coordination, and real-time operational
+              intelligence in one sovereign system.
+            </p>
 
-          {showForm && (
-            <form
-              onSubmit={handleBooking}
-              className="mt-8 w-full max-w-xl rounded-3xl border border-white/10 bg-white/5 p-6"
-            >
-              <h2 className="text-2xl font-bold">Book a Demo</h2>
+            <div className="mt-12 flex flex-wrap gap-5">
+              <Link
+                href="/dashboard"
+                className="rounded-[16px] border border-[#ffd98a]/40 bg-[#ffd98a] px-8 py-4 text-sm font-bold uppercase tracking-[0.18em] text-black transition hover:scale-[1.02]"
+              >
+                Enter Command Core
+              </Link>
 
-              <p className="mt-2 text-sm text-white/60">
-                Tell us what your business needs. This request will be saved
-                into the ZennX AI CRM.
-              </p>
+              <button className="rounded-[16px] border border-white/10 bg-white/[0.03] px-8 py-4 text-sm font-bold uppercase tracking-[0.18em] text-white/75 transition hover:border-[#ffd98a]/30 hover:text-[#ffd98a]">
+                Run System Scan
+              </button>
+            </div>
 
-              <div className="mt-6 grid gap-4">
-                <input
-                  name="full_name"
-                  value={formData.full_name}
-                  onChange={handleChange}
-                  required
-                  placeholder="Full name"
-                  className="rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/40"
-                />
-
-                <input
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
-                  type="email"
-                  placeholder="Email"
-                  className="rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/40"
-                />
-
-                <input
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  placeholder="Phone number"
-                  className="rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/40"
-                />
-
-                <input
-                  name="business_name"
-                  value={formData.business_name}
-                  onChange={handleChange}
-                  placeholder="Business name"
-                  className="rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/40"
-                />
-
-                <textarea
-                  name="service_requested"
-                  value={formData.service_requested}
-                  onChange={handleChange}
-                  required
-                  placeholder="How can ZennX AI help your business?"
-                  className="min-h-28 rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/40"
-                />
-
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-full bg-white px-6 py-3 font-medium text-black hover:bg-white/80 disabled:opacity-50"
+            <div className="mt-16 grid gap-4 xl:grid-cols-3">
+              {[
+                ["Lead Network", "14"],
+                ["High Risk", "1"],
+                ["Active Tasks", "6"],
+              ].map(([label, value], index) => (
+                <div
+                  key={label}
+                  className={`rounded-[20px] border p-6 ${
+                    index === 2
+                      ? "border-[#ffd98a]/30 bg-[#ffd98a]/10"
+                      : "border-white/10 bg-white/[0.02]"
+                  }`}
                 >
-                  {submitting ? "Submitting..." : "Submit Demo Request"}
-                </button>
+                  <p className="text-xs uppercase tracking-[0.28em] text-white/40">
+                    {label}
+                  </p>
+
+                  <h3
+                    className={`${luxurySerif.className} mt-6 text-[3.2rem] font-bold leading-none`}
+                  >
+                    {value}
+                  </h3>
+
+                  <div className="mt-6 h-px w-full bg-white/10" />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[32px] border border-white/10 bg-[#050505]/90 p-10 shadow-[0_0_80px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-[#ffd98a]">
+                  Core Engine
+                </p>
+
+                <h2
+                  className={`${luxurySerif.className} mt-4 text-[4rem] font-bold leading-none`}
+                >
+                  Sovereign AI
+                </h2>
               </div>
-            </form>
-          )}
-        </div>
-      </section>
 
-      <section id="how-it-works" className="border-t border-white/10 px-6 py-24">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold md:text-5xl">
-            Replace repetitive admin work with AI operators.
-          </h2>
-
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <h3 className="text-xl font-semibold">Instant Lead Response</h3>
-              <p className="mt-3 text-white/70">
-                AI replies to new inquiries instantly so businesses stop losing
-                customers to slow response times.
-              </p>
+              <div className="rounded-[12px] border border-[#ffd98a]/30 bg-[#ffd98a]/10 px-5 py-3 text-xs uppercase tracking-[0.25em] text-[#ffd98a]">
+                Active
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <h3 className="text-xl font-semibold">Smart Qualification</h3>
-              <p className="mt-3 text-white/70">
-                Every lead is analyzed for urgency, service type, and sales
-                priority before being routed to the owner.
-              </p>
+            <div className="relative mt-12 flex h-[420px] items-center justify-center overflow-hidden rounded-[28px] border border-white/5 bg-[#070707]">
+              <div className="absolute h-[340px] w-[340px] rounded-full border border-[#ffd98a]/15" />
+
+              <div className="absolute h-[260px] w-[260px] rounded-full border border-[#ffd98a]/12" />
+
+              <div className="absolute h-[180px] w-[180px] rounded-full border border-white/10" />
+
+              <div className="absolute h-[100px] w-[100px] rounded-full bg-[#ffd98a]/20 blur-[40px]" />
+
+              <div className="relative flex h-[90px] w-[90px] items-center justify-center rounded-full bg-[#ffd98a] shadow-[0_0_70px_rgba(255,217,138,0.9)]">
+                <div className="h-4 w-4 rounded-full bg-white" />
+              </div>
+
+              <div className="absolute left-[18%] top-[28%] h-4 w-4 rounded-full bg-white shadow-[0_0_25px_rgba(255,255,255,0.9)]" />
+
+              <div className="absolute right-[20%] top-[22%] h-5 w-5 rounded-full bg-[#ffd98a] shadow-[0_0_30px_rgba(255,217,138,1)]" />
+
+              <div className="absolute bottom-[24%] left-[30%] h-4 w-4 rounded-full bg-[#ffd98a]/80 shadow-[0_0_30px_rgba(255,217,138,0.9)]" />
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <h3 className="text-xl font-semibold">Automated Follow-Up</h3>
-              <p className="mt-3 text-white/70">
-                The system follows up with prospects automatically through
-                email, SMS, and booking links.
-              </p>
+            <div className="mt-10 grid gap-4">
+              {[
+                "Revenue Intelligence",
+                "Operator Handoffs",
+                "Execution Chains",
+                "Business Health",
+              ].map((item) => (
+                <div
+                  key={item}
+                  className="flex items-center justify-between rounded-[16px] border border-white/10 bg-white/[0.02] px-6 py-5"
+                >
+                  <span className="text-sm uppercase tracking-[0.22em] text-white/70">
+                    {item}
+                  </span>
+
+                  <div className="h-3 w-3 rounded-full bg-[#ffd98a]" />
+                </div>
+              ))}
             </div>
-          </div>
+          </section>
         </div>
-      </section>
-
-      <section className="border-t border-white/10 px-6 py-24">
-        <div className="mx-auto max-w-6xl rounded-3xl border border-white/10 bg-white/5 p-8 md:p-12">
-          <h2 className="text-3xl font-bold md:text-5xl">
-            Built for contractors, clinics, auto shops, service businesses, and
-            local operators.
-          </h2>
-
-          <p className="mt-5 max-w-3xl text-white/70">
-            ZennX AI is designed for businesses that need faster customer
-            response, fewer missed opportunities, and less manual admin work.
-          </p>
-
-          <p className="mt-8 text-sm text-white/50">
-            By contacting ZennX AI, you agree to receive messages related to
-            your inquiry. Message and data rates may apply. Reply STOP to
-            unsubscribe.
-          </p>
-        </div>
-      </section>
-
-      <footer className="border-t border-white/10 px-6 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col justify-between gap-4 text-sm text-white/50 md:flex-row">
-          <p>© 2026 ZennX AI. All rights reserved.</p>
-
-          <div className="flex gap-4">
-            <a href="/privacy" className="hover:text-white">
-              Privacy Policy
-            </a>
-
-            <a href="/terms" className="hover:text-white">
-              Terms
-            </a>
-
-            <a href="mailto:hello@zennxai.com" className="hover:text-white">
-              hello@zennxai.com
-            </a>
-          </div>
-        </div>
-      </footer>
+      </div>
     </main>
   );
 }
