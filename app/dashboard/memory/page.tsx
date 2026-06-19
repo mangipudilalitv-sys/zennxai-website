@@ -12,9 +12,9 @@ const sans = Inter({
 
 export default async function MemoryPage() {
   const { data: memory } = await supabase
-    .from("company_memory")
+    .from("operator_memory")
     .select("*")
-    .order("id", { ascending: false });
+    .order("created_at", { ascending: false });
 
   const totalMemory = memory?.length || 0;
 
@@ -34,14 +34,13 @@ export default async function MemoryPage() {
             </h1>
 
             <p className="mt-8 max-w-[760px] text-[1.05rem] leading-[1.9] text-[#b8b1a4]">
-              Adaptive workflow learning, operational intelligence retention,
-              communication patterns, company context, and persistent business
-              memory systems.
+              Voice conversations, lead intelligence, workflow context, and
+              persistent operator memory retained for future automation.
             </p>
           </div>
 
           <div className="grid min-w-[330px] grid-cols-2 gap-3">
-            <div className="min-h-[130px] overflow-hidden rounded-[22px] border border-white/8 bg-white/[0.04] p-6">
+            <div className="min-h-[130px] rounded-[22px] border border-white/8 bg-white/[0.04] p-6">
               <p className="text-[11px] uppercase tracking-[0.3em] text-white/35">
                 Stored Memories
               </p>
@@ -53,7 +52,7 @@ export default async function MemoryPage() {
               </h3>
             </div>
 
-            <div className="min-h-[130px] overflow-hidden rounded-[22px] border border-[#ffd978]/25 bg-[#ffd978]/80 p-6 text-black">
+            <div className="min-h-[130px] rounded-[22px] border border-[#ffd978]/25 bg-[#ffd978]/80 p-6 text-black">
               <p className="text-[11px] uppercase tracking-[0.3em] text-black/45">
                 Memory State
               </p>
@@ -75,12 +74,12 @@ export default async function MemoryPage() {
           <h2
             className={`${luxurySerif.className} mt-4 text-[4.2rem] font-[500] leading-none tracking-[-0.05em] text-[#f8f3ea]`}
           >
-            Company intelligence memory
+            Operator memory stream
           </h2>
         </div>
 
         <div className="rounded-[14px] border border-white/8 bg-white/[0.04] px-5 py-3 text-sm text-white/55">
-          {totalMemory} stored entities
+          {totalMemory} stored memories
         </div>
       </section>
 
@@ -99,33 +98,34 @@ export default async function MemoryPage() {
                 <h3
                   className={`${luxurySerif.className} mt-4 text-[3.5rem] font-[500] leading-none tracking-[-0.05em] text-[#f8f3ea]`}
                 >
-                  {item.company_name || "Stored Company"}
+                  {item.company_name || item.title || "Stored Memory"}
                 </h3>
               </div>
 
               <div className="rounded-[999px] border border-[#ffd978]/25 bg-[#ffd978]/8 px-5 py-3 text-[11px] uppercase tracking-[0.22em] text-[#ffd978]">
-                Memory #{item.id}
+                {item.memory_type || "memory"} #{item.id}
               </div>
             </div>
 
             <div className="mt-8 grid gap-4 xl:grid-cols-2">
               <div className="rounded-[20px] border border-white/8 bg-white/[0.02] p-6">
                 <p className="text-[11px] uppercase tracking-[0.3em] text-white/35">
-                  Company Context
+                  Memory Title
                 </p>
 
                 <p className="mt-4 text-base leading-[1.8] text-[#b8b1a4]">
-                  {item.company_context || item.context || "No context stored."}
+                  {item.title || "Untitled memory"}
                 </p>
               </div>
 
               <div className="rounded-[20px] border border-white/8 bg-white/[0.02] p-6">
                 <p className="text-[11px] uppercase tracking-[0.3em] text-white/35">
-                  Services Intelligence
+                  Operator Routing
                 </p>
 
                 <p className="mt-4 text-base leading-[1.8] text-[#b8b1a4]">
-                  {item.services || item.service_requested || "Learned from lead request"}
+                  {item.assigned_operator || "Workflow Coordination Operator"} ·{" "}
+                  {item.priority || "medium"} priority
                 </p>
               </div>
             </div>
@@ -135,9 +135,8 @@ export default async function MemoryPage() {
                 Workflow Intelligence Notes
               </p>
 
-              <p className="mt-4 text-base leading-[1.8] text-[#b8b1a4]">
-                {item.notes ||
-                  item.memory ||
+              <p className="mt-4 whitespace-pre-wrap text-base leading-[1.8] text-[#b8b1a4]">
+                {item.content ||
                   "Persistent operational intelligence retained for future routing, automation, and business context."}
               </p>
             </div>
