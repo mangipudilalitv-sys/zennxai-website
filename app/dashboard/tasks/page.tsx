@@ -1,4 +1,5 @@
 import { Cormorant_Garamond } from "next/font/google";
+import { revalidatePath } from "next/cache";
 import { supabase } from "@/app/lib/supabase";
 
 const luxurySerif = Cormorant_Garamond({
@@ -6,12 +7,24 @@ const luxurySerif = Cormorant_Garamond({
   weight: ["500", "600", "700"],
 });
 
+async function completeTask(formData: FormData) {
+  "use server";
+
+  const taskId = Number(formData.get("taskId"));
+
+  if (!taskId) return;
+
+  await supabase
+    .from("tasks")
+    .update({ status: "completed" })
+    .eq("id", taskId);
+
+  revalidatePath("/dashboard/tasks");
+}
+
 function MiniGraph() {
   return (
-    <svg
-      viewBox="0 0 220 60"
-      className="mt-5 h-[54px] w-full overflow-visible"
-    >
+    <svg viewBox="0 0 220 60" className="mt-5 h-[54px] w-full overflow-visible">
       <defs>
         <linearGradient id="goldFade" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor="#ffd978" stopOpacity="0.45" />
@@ -39,40 +52,20 @@ export default async function TasksPage() {
   const { data: tasks } = await supabase
     .from("tasks")
     .select("*")
-    .order("id", { ascending: false });
+    .order("created_at", { ascending: false });
 
   const totalTasks = tasks?.length || 0;
-
+  const pendingTasks = tasks?.filter((t) => t.status === "pending").length || 0;
   const activeTasks =
-    tasks?.filter((t) => t.status === "active").length || 0;
-
-  const pendingTasks =
-    tasks?.filter((t) => t.status === "pending").length || 0;
-
+    tasks?.filter((t) => t.status === "active" || t.status === "pending").length || 0;
   const completedTasks =
     tasks?.filter((t) => t.status === "completed").length || 0;
 
   const stats = [
-    {
-      label: "EXECUTION LOOPS",
-      value: totalTasks,
-      detail: "Operational workflows",
-    },
-    {
-      label: "ACTIVE TASKS",
-      value: activeTasks,
-      detail: "Running autonomously",
-    },
-    {
-      label: "PENDING",
-      value: pendingTasks,
-      detail: "Awaiting execution",
-    },
-    {
-      label: "COMPLETED",
-      value: completedTasks,
-      detail: "Resolved systems",
-    },
+    { label: "EXECUTION LOOPS", value: totalTasks, detail: "Operational workflows" },
+    { label: "ACTIVE TASKS", value: activeTasks, detail: "Pending or running" },
+    { label: "PENDING", value: pendingTasks, detail: "Awaiting execution" },
+    { label: "COMPLETED", value: completedTasks, detail: "Resolved systems" },
   ];
 
   return (
@@ -94,9 +87,8 @@ export default async function TasksPage() {
           </h1>
 
           <p className="mt-8 max-w-[720px] text-[1.05rem] leading-[1.9] text-white/52">
-            Universal Operational Intelligence coordinating autonomous
-            execution chains, escalation systems, workflow assignment,
-            monitoring, and business process orchestration.
+            Universal Operational Intelligence coordinating autonomous execution chains,
+            escalation systems, workflow assignment, monitoring, and business process orchestration.
           </p>
 
           <div className="mt-10 flex items-center gap-12">
@@ -116,17 +108,12 @@ export default async function TasksPage() {
 
       <section className="grid gap-3 xl:grid-cols-4">
         {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="rounded-[22px] border border-white/8 bg-[#050505] p-6"
-          >
+          <div key={stat.label} className="rounded-[22px] border border-white/8 bg-[#050505] p-6">
             <p className="text-[11px] uppercase tracking-[0.32em] text-white/34">
               {stat.label}
             </p>
 
-            <h2
-              className={`${luxurySerif.className} mt-5 text-[3.1rem] leading-none text-[#f8f3ea]`}
-            >
+            <h2 className={`${luxurySerif.className} mt-5 text-[3.1rem] leading-none text-[#f8f3ea]`}>
               {stat.value}
             </h2>
 
@@ -139,10 +126,7 @@ export default async function TasksPage() {
 
       <section className="grid gap-3 xl:grid-cols-2">
         {tasks?.map((task) => (
-          <div
-            key={task.id}
-            className="rounded-[24px] border border-white/8 bg-[#050505] p-7"
-          >
+          <div key={task.id} className="rounded-[24px] border border-white/8 bg-[#050505] p-7">
             <div className="flex items-start justify-between gap-6">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.3em] text-[#ffd978]">
@@ -157,7 +141,7 @@ export default async function TasksPage() {
               </div>
 
               <div className="rounded-[12px] border border-[#ffd978]/20 bg-[#ffd978]/8 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#ffd978]">
-                {task.priority || "active"}
+                {task.priority || "medium"}
               </div>
             </div>
 
@@ -189,8 +173,7 @@ export default async function TasksPage() {
               </p>
 
               <p className="mt-4 text-sm leading-[1.9] text-white/54">
-                {task.task_description ||
-                  "No operational description stored."}
+                {task.task_description || "No operational description stored."}
               </p>
             </div>
 
@@ -199,9 +182,16 @@ export default async function TasksPage() {
                 Assigned to {task.assigned_agent || "ZennX AI"}
               </span>
 
-              <span className="text-sm text-[#ffd978]">
-                Due: {task.due_time || "active"}
-              </span>
+              {task.status !== "completed" ? (
+                <form action={completeTask}>
+                  <input type="hidden" name="taskId" value={task.id} />
+                  <button className="rounded-full border border-[#ffd978]/25 bg-[#ffd978]/10 px-5 py-2 text-sm font-semibold text-[#ffd978] hover:bg-[#ffd978]/20">
+                    Mark Complete
+                  </button>
+                </form>
+              ) : (
+                <span className="text-sm text-[#ffd978]">Completed</span>
+              )}
             </div>
           </div>
         ))}
