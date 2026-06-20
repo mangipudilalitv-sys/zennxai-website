@@ -30,13 +30,23 @@ export default async function HealthPage() {
     tasks?.filter((task) => task.status === "completed").length || 0;
 
   const highUrgencyLeads =
-    leads?.filter((lead) => lead.urgency === "high").length || 0;
+    leads?.filter(
+      (lead) => lead.urgency === "high" || lead.status === "escalated"
+    ).length || 0;
 
-  const successRate =
+  const completionRate =
     totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
 
+  const pressurePenalty = Math.min(45, pendingTasks * 0.35);
+  const urgencyPenalty = Math.min(25, highUrgencyLeads * 6);
+
+  const healthScore = Math.max(
+    1,
+    Math.min(100, Math.round(92 - pressurePenalty - urgencyPenalty + completionRate * 0.15))
+  );
+
   const state =
-    successRate >= 80 ? "Operational" : successRate >= 60 ? "Warning" : "Critical";
+    healthScore >= 75 ? "Operational" : healthScore >= 45 ? "Pressure" : "Critical";
 
   return (
     <main className={`${sans.className} grid gap-3`}>
@@ -85,17 +95,17 @@ export default async function HealthPage() {
           <div className="flex items-start justify-between gap-6">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.38em] text-[#ffd978]">
-                Execution Success Rate
+                Health Score
               </p>
 
               <h2
                 className={`${luxurySerif.className} mt-5 text-[5rem] font-[500] leading-none text-[#f8f3ea]`}
               >
-                {successRate}
+                {healthScore}
               </h2>
             </div>
 
-            <div className="overflow-hidden rounded-[10px] border border-[#ffd978]/25 bg-[#ffd978]/8 px-5 py-3 text-[11px] uppercase tracking-[0.22em] text-[#ffd978]">
+            <div className="max-w-[180px] rounded-[10px] border border-[#ffd978]/25 bg-[#ffd978]/8 px-5 py-3 text-center text-[11px] uppercase tracking-[0.22em] text-[#ffd978]">
               {state}
             </div>
           </div>
@@ -110,7 +120,7 @@ export default async function HealthPage() {
               <span
                 className={`${luxurySerif.className} text-[2.4rem] font-[500] leading-none`}
               >
-                {successRate}
+                {healthScore}
               </span>
             </div>
           </div>
@@ -141,7 +151,7 @@ export default async function HealthPage() {
           ["Total Tasks", totalTasks],
           ["Pending", pendingTasks],
           ["Completed", completedTasks],
-          ["High Urgency", highUrgencyLeads],
+          ["Completion Rate", `${completionRate}%`],
         ].map(([label, value]) => (
           <div
             key={label}
