@@ -1,5 +1,40 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { supabase } from "@/app/lib/supabase";
+
+const leadStatuses = [
+  "voice_captured",
+  "contacted",
+  "qualified",
+  "proposal_sent",
+  "closed_won",
+  "closed_lost",
+];
+
+async function updateLeadStatus(formData: FormData) {
+  "use server";
+
+  const leadId = Number(formData.get("leadId"));
+  const status = String(formData.get("status") || "");
+
+  if (!leadId || !leadStatuses.includes(status)) return;
+
+  await supabase
+    .from("leads")
+    .update({
+      status,
+      follow_up_stage: status,
+      last_contacted:
+        status === "contacted" ||
+        status === "qualified" ||
+        status === "proposal_sent"
+          ? new Date().toISOString()
+          : undefined,
+    })
+    .eq("id", leadId);
+
+  revalidatePath("/dashboard/leads");
+}
 
 export default async function LeadsPage() {
   const { data: leads } = await supabase
@@ -7,10 +42,15 @@ export default async function LeadsPage() {
     .select("*")
     .order("id", { ascending: false });
 
+  const totalLeads = leads?.length || 0;
+  const activeLeads =
+    leads?.filter(
+      (lead) => lead.status !== "closed_won" && lead.status !== "closed_lost"
+    ).length || 0;
+
   return (
     <div className="relative overflow-hidden px-10 py-8 text-[#fffaf0]">
       <div className="ambient-light left-[10%] top-[0%] h-[420px] w-[420px] bg-[#f2d8a8]/18" />
-
       <div className="ambient-light bottom-[-12%] right-[8%] h-[520px] w-[520px] bg-white/10" />
 
       <div className="relative z-10">
@@ -38,19 +78,15 @@ export default async function LeadsPage() {
                   Total Leads
                 </p>
 
-                <h2 className="mt-4 text-5xl font-black">
-                  {leads?.length || 0}
-                </h2>
+                <h2 className="mt-4 text-5xl font-black">{totalLeads}</h2>
               </div>
 
               <div className="champagne-surface rounded-3xl p-6">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/45">
-                  Active Network
+                  Active Leads
                 </p>
 
-                <h2 className="mt-4 text-4xl font-black">
-                  LIVE
-                </h2>
+                <h2 className="mt-4 text-5xl font-black">{activeLeads}</h2>
               </div>
             </div>
           </div>
@@ -69,14 +105,13 @@ export default async function LeadsPage() {
             </div>
 
             <div className="white-glass rounded-2xl px-5 py-3 text-sm text-white/70">
-              {leads?.length || 0} monitored entities
+              {totalLeads} monitored entities
             </div>
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
             {leads?.map((lead) => (
-              <Link
-                href={`/dashboard/leads/${lead.id}`}
+              <div
                 key={lead.id}
                 className="white-glass group relative overflow-hidden rounded-[36px] p-8 transition duration-300 hover:scale-[1.01]"
               >
@@ -124,30 +159,21 @@ export default async function LeadsPage() {
                       </p>
 
                       <div className="mt-4 flex items-center justify-between">
-                        <span className="text-sm text-white/55">
-                          Urgency
-                        </span>
-
+                        <span className="text-sm text-white/55">Urgency</span>
                         <span className="font-semibold capitalize text-white/85">
                           {lead.urgency || "unknown"}
                         </span>
                       </div>
 
                       <div className="mt-3 flex items-center justify-between">
-                        <span className="text-sm text-white/55">
-                          Lead Score
-                        </span>
-
+                        <span className="text-sm text-white/55">Lead Score</span>
                         <span className="font-semibold text-white/85">
                           {lead.lead_score || "N/A"}
                         </span>
                       </div>
 
                       <div className="mt-3 flex items-center justify-between">
-                        <span className="text-sm text-white/55">
-                          Follow-up
-                        </span>
-
+                        <span className="text-sm text-white/55">Follow-up</span>
                         <span className="font-semibold text-white/85">
                           {lead.follow_up_stage || "initial"}
                         </span>
@@ -172,9 +198,32 @@ export default async function LeadsPage() {
                     </p>
 
                     <p className="mt-4 line-clamp-4 text-base leading-relaxed text-white/68">
-                      {lead.ai_summary ||
-                        "No AI intelligence generated yet."}
+                      {lead.ai_summary || "No AI intelligence generated yet."}
                     </p>
+                  </div>
+
+                  <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-6">
+                    <p className="text-xs uppercase tracking-[0.25em] text-white/35">
+                      Pipeline Control
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {leadStatuses.map((status) => (
+                        <form key={status} action={updateLeadStatus}>
+                          <input type="hidden" name="leadId" value={lead.id} />
+                          <input type="hidden" name="status" value={status} />
+                          <button
+                            className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] transition ${
+                              lead.status === status
+                                ? "border-[#f2d8a8] bg-[#f2d8a8]/20 text-[#f2d8a8]"
+                                : "border-white/10 bg-white/5 text-white/45 hover:border-[#f2d8a8]/35 hover:text-[#f2d8a8]"
+                            }`}
+                          >
+                            {status.replaceAll("_", " ")}
+                          </button>
+                        </form>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="mt-8 flex items-center justify-between">
@@ -186,12 +235,15 @@ export default async function LeadsPage() {
                       </p>
                     </div>
 
-                    <div className="rounded-full bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.18em] text-white/55">
+                    <Link
+                      href={`/dashboard/leads/${lead.id}`}
+                      className="rounded-full bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.18em] text-white/55 hover:bg-white/15"
+                    >
                       View Dossier
-                    </div>
+                    </Link>
                   </div>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         </section>
