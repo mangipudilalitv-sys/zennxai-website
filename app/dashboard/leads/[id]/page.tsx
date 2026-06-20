@@ -1,6 +1,15 @@
 import { supabase } from "@/app/lib/supabase";
 import { revalidatePath } from "next/cache";
 
+const leadStatuses = [
+  "voice_captured",
+  "contacted",
+  "qualified",
+  "proposal_sent",
+  "closed_won",
+  "closed_lost",
+];
+
 export default async function LeadDetailPage({
   params,
 }: {
@@ -23,9 +32,7 @@ export default async function LeadDetailPage({
           <h1 className="mt-3 text-6xl font-black tracking-[-0.06em]">
             No Lead Found
           </h1>
-          <p className="soft-text mt-4">
-            No lead exists with ID: {id}
-          </p>
+          <p className="soft-text mt-4">No lead exists with ID: {id}</p>
         </div>
       </div>
     );
@@ -38,10 +45,57 @@ export default async function LeadDetailPage({
     .order("id", { ascending: false });
 
   const { data: memory } = await supabase
-    .from("company_memory")
+    .from("operator_memory")
     .select("*")
-    .eq("company_name", lead.business_name)
+    .eq("lead_id", leadId)
     .order("id", { ascending: false });
+
+  const { data: conversations } = await supabase
+    .from("voice_conversations")
+    .select("*")
+    .eq("lead_id", leadId)
+    .order("id", { ascending: false });
+
+  async function updateLeadStatus(formData: FormData) {
+    "use server";
+
+    const status = String(formData.get("status") || "");
+
+    if (!leadStatuses.includes(status)) return;
+
+    await supabase
+      .from("leads")
+      .update({
+        status,
+        follow_up_stage: status,
+        last_contacted:
+          status === "contacted" ||
+          status === "qualified" ||
+          status === "proposal_sent"
+            ? new Date().toISOString()
+            : lead.last_contacted,
+      })
+      .eq("id", leadId);
+
+    revalidatePath(`/dashboard/leads/${id}`);
+    revalidatePath("/dashboard/leads");
+  }
+
+  async function completeTask(formData: FormData) {
+    "use server";
+
+    const taskId = Number(formData.get("taskId"));
+
+    if (!taskId) return;
+
+    await supabase
+      .from("tasks")
+      .update({ status: "completed" })
+      .eq("id", taskId);
+
+    revalidatePath(`/dashboard/leads/${id}`);
+    revalidatePath("/dashboard/tasks");
+  }
 
   return (
     <div className="relative overflow-hidden px-10 py-8 text-[#fffaf0]">
@@ -86,10 +140,10 @@ export default async function LeadDetailPage({
 
               <div className="champagne-surface rounded-3xl p-6">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/45">
-                  Operator
+                  Linked Systems
                 </p>
                 <h2 className="mt-4 text-2xl font-black leading-tight">
-                  {lead.assigned_operator || "Unassigned"}
+                  {(tasks?.length || 0) + (memory?.length || 0)} records
                 </h2>
               </div>
             </div>
@@ -121,10 +175,12 @@ export default async function LeadDetailPage({
 
               <div className="white-glass rounded-3xl p-6">
                 <p className="text-xs uppercase tracking-[0.22em] text-white/35">
-                  Workflow Stage
+                  Last Contacted
                 </p>
                 <p className="mt-3 text-2xl font-black">
-                  {lead.workflow_stage || "not started"}
+                  {lead.last_contacted
+                    ? new Date(lead.last_contacted).toLocaleDateString()
+                    : "not yet"}
                 </p>
               </div>
             </div>
@@ -157,125 +213,29 @@ export default async function LeadDetailPage({
           <div className="mb-8 flex items-end justify-between">
             <div>
               <p className="gold-text text-sm uppercase tracking-[0.25em]">
-                Action Console
+                Pipeline Control
               </p>
               <h2 className="mt-3 text-6xl font-black tracking-[-0.06em]">
-                Operational controls
+                Lead lifecycle
               </h2>
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-5">
-            <form
-              action={async () => {
-                "use server";
-
-                await supabase
-                  .from("leads")
-                  .update({ status: "contacted" })
-                  .eq("id", leadId);
-
-                revalidatePath(`/dashboard/leads/${id}`);
-              }}
-            >
-              <button className="white-glass w-full rounded-3xl px-5 py-5 text-sm font-black text-white/85 transition hover:scale-[1.02]">
-                Mark Contacted
-              </button>
-            </form>
-
-            <form
-              action={async () => {
-                "use server";
-
-                await supabase
-                  .from("leads")
-                  .update({
-                    status: "escalated",
-                    urgency: "high",
-                  })
-                  .eq("id", leadId);
-
-                await supabase.from("tasks").insert([
-                  {
-                    lead_id: leadId,
-                    company_name: lead.business_name || "Unknown Business",
-                    task_title: "Urgent Escalation Review",
-                    task_description:
-                      "This lead was escalated and requires immediate operational review.",
-                    priority: "high",
-                    assigned_agent: "Escalation Intelligence Layer",
-                    due_time: "immediately",
-                    status: "pending",
-                  },
-                ]);
-
-                revalidatePath(`/dashboard/leads/${id}`);
-              }}
-            >
-              <button className="champagne-surface w-full rounded-3xl px-5 py-5 text-sm font-black text-white transition hover:scale-[1.02]">
-                Escalate Lead
-              </button>
-            </form>
-
-            <form
-              action={async () => {
-                "use server";
-
-                await fetch("http://localhost:3000/api/route-operator", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ leadId }),
-                });
-
-                revalidatePath(`/dashboard/leads/${id}`);
-              }}
-            >
-              <button className="white-glass w-full rounded-3xl px-5 py-5 text-sm font-black text-white/85 transition hover:scale-[1.02]">
-                Route Operator
-              </button>
-            </form>
-
-            <form
-              action={async () => {
-                "use server";
-
-                await fetch("http://localhost:3000/api/create-execution-chain", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ leadId }),
-                });
-
-                revalidatePath(`/dashboard/leads/${id}`);
-              }}
-            >
-              <button className="white-glass w-full rounded-3xl px-5 py-5 text-sm font-black text-white/85 transition hover:scale-[1.02]">
-                Execution Chain
-              </button>
-            </form>
-
-            <form
-              action={async () => {
-                "use server";
-
-                await fetch("http://localhost:3000/api/generate-next-action", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ leadId }),
-                });
-
-                revalidatePath(`/dashboard/leads/${id}`);
-              }}
-            >
-              <button className="white-glass w-full rounded-3xl px-5 py-5 text-sm font-black text-white/85 transition hover:scale-[1.02]">
-                Next Action
-              </button>
-            </form>
+          <div className="grid gap-3 xl:grid-cols-6">
+            {leadStatuses.map((status) => (
+              <form key={status} action={updateLeadStatus}>
+                <input type="hidden" name="status" value={status} />
+                <button
+                  className={`w-full rounded-3xl px-5 py-5 text-xs font-black uppercase tracking-[0.16em] transition hover:scale-[1.02] ${
+                    lead.status === status
+                      ? "champagne-surface text-white"
+                      : "white-glass text-white/70"
+                  }`}
+                >
+                  {status.replaceAll("_", " ")}
+                </button>
+              </form>
+            ))}
           </div>
         </section>
 
@@ -330,27 +290,18 @@ export default async function LeadDetailPage({
                         </span>
                       </div>
 
-                      <form
-                        action={async () => {
-                          "use server";
-
-                          await fetch("http://localhost:3000/api/operator-handoff", {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              taskId: task.id,
-                            }),
-                          });
-
-                          revalidatePath(`/dashboard/leads/${id}`);
-                        }}
-                      >
-                        <button className="champagne-surface mt-7 rounded-2xl px-5 py-3 text-sm font-black text-white transition hover:scale-[1.02]">
-                          Run Operator Handoff
-                        </button>
-                      </form>
+                      {task.status !== "completed" ? (
+                        <form action={completeTask}>
+                          <input type="hidden" name="taskId" value={task.id} />
+                          <button className="champagne-surface mt-7 rounded-2xl px-5 py-3 text-sm font-black text-white transition hover:scale-[1.02]">
+                            Mark Complete
+                          </button>
+                        </form>
+                      ) : (
+                        <p className="mt-7 rounded-2xl bg-black/25 px-5 py-3 text-sm font-black text-[#f2d8a8]">
+                          Completed
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))
@@ -365,7 +316,7 @@ export default async function LeadDetailPage({
           <div>
             <div className="mb-8">
               <p className="gold-text text-sm uppercase tracking-[0.25em]">
-                Company Memory
+                Voice Intelligence Memory
               </p>
 
               <h2 className="mt-3 text-6xl font-black tracking-[-0.06em]">
@@ -381,20 +332,106 @@ export default async function LeadDetailPage({
                     className="glass-panel luxury-border rounded-[34px] p-7"
                   >
                     <p className="text-xs uppercase tracking-[0.25em] text-white/35">
-                      Memory #{item.id}
+                      {item.memory_type || "memory"} #{item.id}
                     </p>
 
+                    <h3 className="mt-3 text-2xl font-black text-white/90">
+                      {item.title || "Untitled Memory"}
+                    </h3>
+
                     <p className="soft-text mt-5 whitespace-pre-wrap text-sm leading-relaxed">
-                      {item.workflow_notes || "No workflow notes."}
+                      {item.content || item.workflow_notes || "No memory content."}
                     </p>
                   </div>
                 ))
               ) : (
                 <div className="white-glass rounded-[34px] p-8 text-white/55">
-                  No company memory linked to this lead yet.
+                  No voice memory linked to this lead yet.
                 </div>
               )}
             </div>
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <div className="mb-8">
+            <p className="gold-text text-sm uppercase tracking-[0.25em]">
+              Voice Conversation Records
+            </p>
+
+            <h2 className="mt-3 text-6xl font-black tracking-[-0.06em]">
+              Call transcript history
+            </h2>
+          </div>
+
+          <div className="grid gap-6">
+            {conversations && conversations.length > 0 ? (
+              conversations.map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className="glass-panel luxury-border rounded-[34px] p-8"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-5">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.25em] text-white/35">
+                        Call #{conversation.id}
+                      </p>
+
+                      <h3 className="mt-3 text-3xl font-black">
+                        {conversation.caller_name || "Unknown Caller"} from{" "}
+                        {conversation.company_name || "Unknown Company"}
+                      </h3>
+                    </div>
+
+                    <span className="rounded-full border border-[#f2d8a8]/25 bg-[#f2d8a8]/10 px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#f2d8a8]">
+                      {conversation.urgency || "medium"}
+                    </span>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl bg-black/20 p-5">
+                      <p className="text-xs uppercase tracking-[0.2em] text-white/35">
+                        Intent
+                      </p>
+                      <p className="mt-3 text-white/75">
+                        {conversation.intent || "No intent stored."}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-black/20 p-5">
+                      <p className="text-xs uppercase tracking-[0.2em] text-white/35">
+                        Call SID
+                      </p>
+                      <p className="mt-3 text-white/75">
+                        {conversation.call_sid || "No call sid."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 rounded-2xl bg-black/20 p-5">
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/35">
+                      Transcript
+                    </p>
+                    <p className="mt-4 whitespace-pre-wrap text-white/70">
+                      {conversation.transcript || "No transcript stored."}
+                    </p>
+                  </div>
+
+                  <div className="mt-6 rounded-2xl bg-black/20 p-5">
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/35">
+                      Summary
+                    </p>
+                    <p className="mt-4 whitespace-pre-wrap text-white/70">
+                      {conversation.summary || "No summary stored."}
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="white-glass rounded-[34px] p-8 text-white/55">
+                No voice conversations linked to this lead yet.
+              </div>
+            )}
           </div>
         </section>
       </div>
