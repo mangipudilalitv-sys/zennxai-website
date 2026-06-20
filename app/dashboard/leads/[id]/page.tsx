@@ -10,6 +10,10 @@ const leadStatuses = [
   "closed_lost",
 ];
 
+function formatStatus(value: string | null | undefined) {
+  return String(value || "new").replaceAll("_", " ");
+}
+
 export default async function LeadDetailPage({
   params,
 }: {
@@ -60,7 +64,6 @@ export default async function LeadDetailPage({
     "use server";
 
     const status = String(formData.get("status") || "");
-
     if (!leadStatuses.includes(status)) return;
 
     await supabase
@@ -85,7 +88,6 @@ export default async function LeadDetailPage({
     "use server";
 
     const taskId = Number(formData.get("taskId"));
-
     if (!taskId) return;
 
     await supabase
@@ -119,30 +121,30 @@ export default async function LeadDetailPage({
               {lead.phone || "No phone"}
             </p>
 
-            <div className="mt-10 grid gap-4 md:grid-cols-3">
-              <div className="white-glass rounded-3xl p-6">
+            <div className="mt-10 grid gap-5 md:grid-cols-3">
+              <div className="white-glass min-h-[150px] rounded-3xl p-6">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/35">
                   Status
                 </p>
-                <h2 className="mt-4 text-3xl font-black capitalize">
-                  {lead.status || "new"}
+                <h2 className="mt-5 text-2xl font-black capitalize leading-tight">
+                  {formatStatus(lead.status)}
                 </h2>
               </div>
 
-              <div className="white-glass rounded-3xl p-6">
+              <div className="white-glass min-h-[150px] rounded-3xl p-6">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/35">
                   Urgency
                 </p>
-                <h2 className="mt-4 text-3xl font-black capitalize">
+                <h2 className="mt-5 text-2xl font-black capitalize leading-tight">
                   {lead.urgency || "unknown"}
                 </h2>
               </div>
 
-              <div className="champagne-surface rounded-3xl p-6">
+              <div className="champagne-surface min-h-[150px] rounded-3xl p-6">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/45">
                   Linked Systems
                 </p>
-                <h2 className="mt-4 text-2xl font-black leading-tight">
+                <h2 className="mt-5 text-2xl font-black leading-tight">
                   {(tasks?.length || 0) + (memory?.length || 0)} records
                 </h2>
               </div>
@@ -168,8 +170,8 @@ export default async function LeadDetailPage({
                 <p className="text-xs uppercase tracking-[0.22em] text-white/35">
                   Follow-Up Stage
                 </p>
-                <p className="mt-3 text-2xl font-black">
-                  {lead.follow_up_stage || "initial"}
+                <p className="mt-3 text-2xl font-black capitalize">
+                  {formatStatus(lead.follow_up_stage || "initial")}
                 </p>
               </div>
 
@@ -232,7 +234,7 @@ export default async function LeadDetailPage({
                       : "white-glass text-white/70"
                   }`}
                 >
-                  {status.replaceAll("_", " ")}
+                  {formatStatus(status)}
                 </button>
               </form>
             ))}
@@ -332,7 +334,7 @@ export default async function LeadDetailPage({
                     className="glass-panel luxury-border rounded-[34px] p-7"
                   >
                     <p className="text-xs uppercase tracking-[0.25em] text-white/35">
-                      {item.memory_type || "memory"} #{item.id}
+                      {formatStatus(item.memory_type)} #{item.id}
                     </p>
 
                     <h3 className="mt-3 text-2xl font-black text-white/90">
