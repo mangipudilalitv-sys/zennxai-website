@@ -13,28 +13,30 @@ const sans = Inter({
 export default async function HealthPage() {
   const { data: leads } = await supabase.from("leads").select("*");
   const { data: tasks } = await supabase.from("tasks").select("*");
+  const { data: conversations } = await supabase
+    .from("voice_conversations")
+    .select("*");
+  const { data: memory } = await supabase.from("operator_memory").select("*");
 
   const totalLeads = leads?.length || 0;
   const totalTasks = tasks?.length || 0;
-
-  const highRiskLeads =
-    leads?.filter(
-      (lead) =>
-        lead.status === "escalated" ||
-        lead.status === "high" ||
-        lead.urgency === "high"
-    ).length || 0;
+  const totalCalls = conversations?.length || 0;
+  const totalMemory = memory?.length || 0;
 
   const pendingTasks =
     tasks?.filter((task) => task.status === "pending").length || 0;
 
-  const healthScore = Math.max(
-    0,
-    Math.min(100, 94 - highRiskLeads * 6 - pendingTasks * 3)
-  );
+  const completedTasks =
+    tasks?.filter((task) => task.status === "completed").length || 0;
+
+  const highUrgencyLeads =
+    leads?.filter((lead) => lead.urgency === "high").length || 0;
+
+  const successRate =
+    totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
 
   const state =
-    healthScore >= 80 ? "Stable" : healthScore >= 60 ? "Watch" : "Pressure";
+    successRate >= 80 ? "Operational" : successRate >= 60 ? "Warning" : "Critical";
 
   return (
     <main className={`${sans.className} grid gap-3`}>
@@ -51,16 +53,15 @@ export default async function HealthPage() {
           </h1>
 
           <p className="mt-8 max-w-[680px] text-[1.05rem] leading-[1.9] text-[#b8b1a4]">
-            Universal Operational Intelligence scans execution pressure,
-            revenue leaks, stalled workflows, operator activity, and business
-            instability before they become expensive problems.
+            Real-time operational intelligence across calls, leads, tasks,
+            memory, execution pressure, and business workflow health.
           </p>
 
           <div className="mt-10 grid gap-3 md:grid-cols-3">
             {[
+              ["Calls", totalCalls],
               ["Leads", totalLeads],
-              ["Tasks", totalTasks],
-              ["State", state],
+              ["Memory", totalMemory],
             ].map(([label, value]) => (
               <div
                 key={label}
@@ -84,13 +85,13 @@ export default async function HealthPage() {
           <div className="flex items-start justify-between gap-6">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.38em] text-[#ffd978]">
-                Health Score
+                Execution Success Rate
               </p>
 
               <h2
                 className={`${luxurySerif.className} mt-5 text-[5rem] font-[500] leading-none text-[#f8f3ea]`}
               >
-                {healthScore}
+                {successRate}
               </h2>
             </div>
 
@@ -109,17 +110,17 @@ export default async function HealthPage() {
               <span
                 className={`${luxurySerif.className} text-[2.4rem] font-[500] leading-none`}
               >
-                {healthScore}
+                {successRate}
               </span>
             </div>
           </div>
 
           <div className="grid gap-3">
             {[
-              "Revenue Leak Detection",
-              "Workflow Pressure",
-              "Operator Stability",
-              "Execution Latency",
+              `Calls Captured: ${totalCalls}`,
+              `Pending Tasks: ${pendingTasks}`,
+              `Completed Tasks: ${completedTasks}`,
+              `High Urgency Leads: ${highUrgencyLeads}`,
             ].map((item) => (
               <div
                 key={item}
@@ -133,6 +134,30 @@ export default async function HealthPage() {
             ))}
           </div>
         </div>
+      </section>
+
+      <section className="grid gap-3 xl:grid-cols-4">
+        {[
+          ["Total Tasks", totalTasks],
+          ["Pending", pendingTasks],
+          ["Completed", completedTasks],
+          ["High Urgency", highUrgencyLeads],
+        ].map(([label, value]) => (
+          <div
+            key={label}
+            className="rounded-[24px] border border-white/8 bg-[#050505] p-7"
+          >
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/35">
+              {label}
+            </p>
+
+            <h3
+              className={`${luxurySerif.className} mt-6 text-[3rem] font-[500] leading-none text-[#f8f3ea]`}
+            >
+              {value}
+            </h3>
+          </div>
+        ))}
       </section>
     </main>
   );
