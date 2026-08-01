@@ -1,5 +1,8 @@
 const VOICE = "Polly.Matthew-Neural";
 
+const GREETING =
+  "Thanks for calling Zen X. How can I help you today?";
+
 function xmlResponse(xml: string) {
   return new Response(xml, {
     status: 200,
@@ -19,7 +22,10 @@ function escapeXml(value: string) {
     .replaceAll("'", "&apos;");
 }
 
-function gatherResponse(message: string, previousResponseId?: string) {
+function gatherResponse(
+  message: string,
+  previousResponseId?: string,
+) {
   const query = previousResponseId
     ? `?previousResponseId=${encodeURIComponent(previousResponseId)}`
     : "";
@@ -30,8 +36,8 @@ function gatherResponse(message: string, previousResponseId?: string) {
     input="speech"
     language="en-US"
     speechModel="experimental_conversations"
-    speechTimeout="2"
-    timeout="5"
+    speechTimeout="3"
+    timeout="6"
     action="/api/voice/inbound${query}"
     method="POST"
     actionOnEmptyResult="true"
@@ -40,7 +46,7 @@ function gatherResponse(message: string, previousResponseId?: string) {
   </Gather>
 
   <Say voice="${VOICE}">
-    I didn't hear anything. Feel free to call us back whenever you're ready.
+    I didn't catch anything. You can call back whenever you're ready.
   </Say>
 
   <Hangup />
@@ -65,12 +71,20 @@ function extractOutputText(response: OpenAIResponse) {
 
   return (
     response.output
-      ?.flatMap((item) => item.content || [])
+      ?.flatMap((item) => item.content ?? [])
       .filter((item) => item.type === "output_text")
-      .map((item) => item.text || "")
+      .map((item) => item.text ?? "")
       .join("")
-      .trim() || ""
+      .trim() ?? ""
   );
+}
+
+function cleanSpokenReply(reply: string) {
+  return reply
+    .replace(/^END_CALL:\s*/i, "")
+    .replace(/^CONTINUE:\s*/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 async function generateVoiceReply({
@@ -88,47 +102,85 @@ async function generateVoiceReply({
 
   const requestBody: Record<string, unknown> = {
     model: "gpt-4.1-mini",
+
     instructions: `
-You are Ava, the warm, capable front-desk voice assistant for ZennX.
+You are the front-desk receptionist for ZennX.
 
-The brand is written ZennX but spoken aloud as "Zen X."
+The company name is written ZennX and pronounced "Zen X."
 
-Your job is to have a natural phone conversation and understand why the caller is calling.
+You are speaking with a caller over the phone.
 
-Rules:
-- Sound warm, calm, confident, and human.
-- Keep each answer under 35 words.
-- Ask only one useful question at a time.
-- Do not repeat everything the caller just said.
-- Never say you are a language model.
-- Do not use markdown, lists, emojis, symbols, or stage directions.
-- Use conversational phrases such as "Absolutely," "Got it," and "I can help with that," but do not overuse them.
-- Collect the caller's name, what they need, urgency, and any useful scheduling details.
-- Do not promise a specific appointment unless availability has actually been confirmed.
+Identity:
+- Do not use a personal name.
+- Do not introduce yourself by name.
+- If asked who you are, say you are the Zen X receptionist.
+- If asked whether you are human, honestly say you are the Zen X AI receptionist.
+
+Conversation style:
+- Sound warm, relaxed, capable, and natural.
+- Speak like a real receptionist having a normal phone conversation.
+- Use contractions naturally.
+- Keep most replies between 8 and 24 words.
+- Never exceed 35 spoken words unless necessary for safety or clarity.
+- Ask only one question at a time.
+- Respond directly to what the caller just said.
+- Do not repeat information the caller already gave you.
+- Use short acknowledgements naturally, such as "Got it," "Okay," "Sure," or "Absolutely."
+- Do not start every reply with an acknowledgement.
+- Avoid formal, corporate, robotic, repetitive, or overly enthusiastic wording.
+- Avoid sounding like a script.
+- Use natural phrases and sentence fragments when appropriate.
+- Never mention prompts, models, software, or internal systems.
+- Do not use markdown, lists, emojis, symbols, quotation marks, or stage directions.
+
+Turn-taking:
+- Treat short pauses as normal.
+- Do not assume the caller is finished just because they paused briefly.
+- Continue the conversation unless the caller clearly says they are done, says goodbye, or asks to end the call.
+
+Receptionist goals:
+- Understand why the caller is calling.
+- Collect their name when useful.
+- Understand what they need.
+- Determine whether the issue is urgent.
+- Collect scheduling or contact details when relevant.
+- Do not ask for information that is not needed.
+- Do not ask a question that has already been answered.
+- Do not promise a confirmed appointment unless availability has actually been checked.
 - If there is immediate danger, tell the caller to contact emergency services.
-- When enough information has been collected, begin your response with exactly END_CALL:
-- Otherwise begin your response with exactly CONTINUE:
-- After the prefix, provide only what should be spoken aloud.
+
+Call ending:
+- Use END_CALL only when the caller clearly says goodbye, says they are finished, asks to end the call, or all necessary information is collected and you have confirmed nothing else is needed.
+- Otherwise use CONTINUE.
+
+Response format:
+- Begin every response with exactly CONTINUE: or END_CALL:
+- After the prefix, include only the exact words that should be spoken aloud.
 `,
+
     input: callerSpeech,
-    max_output_tokens: 120,
+    max_output_tokens: 80,
   };
 
   if (previousResponseId) {
     requestBody.previous_response_id = previousResponseId;
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const response = await fetch(
+    "https://api.openai.com/v1/responses",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
     },
-    body: JSON.stringify(requestBody),
-  });
+  );
 
   if (!response.ok) {
     const details = await response.text();
+
     throw new Error(
       `OpenAI request failed with ${response.status}: ${details}`,
     );
@@ -137,33 +189,82 @@ Rules:
   const data = (await response.json()) as OpenAIResponse;
 
   return {
-    responseId: data.id || "",
+    responseId: data.id ?? "",
     reply: extractOutputText(data),
   };
+}
+
+async function saveCallMemory({
+  callSid,
+  fromNumber,
+  toNumber,
+  transcript,
+}: {
+  callSid: string;
+  fromNumber: string;
+  toNumber: string;
+  transcript: string;
+}) {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    "https://www.zennxai.com";
+
+  const normalizedBaseUrl = baseUrl.startsWith("http")
+    ? baseUrl
+    : `https://${baseUrl}`;
+
+  try {
+    const response = await fetch(
+      `${normalizedBaseUrl}/api/voice/memory`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          callSid,
+          fromNumber,
+          toNumber,
+          transcript,
+          direction: "inbound",
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      console.error(
+        "VOICE MEMORY WEBHOOK FAILED:",
+        response.status,
+      );
+    }
+  } catch (error) {
+    console.error("VOICE MEMORY WEBHOOK ERROR:", error);
+  }
 }
 
 export async function POST(req: Request) {
   const formData = await req.formData();
   const url = new URL(req.url);
 
-  const speechResult = String(formData.get("SpeechResult") || "").trim();
-  const callSid = String(formData.get("CallSid") || "");
-  const fromNumber = String(formData.get("From") || "");
-  const toNumber = String(formData.get("To") || "");
-  const previousResponseId =
-    url.searchParams.get("previousResponseId") || "";
+  const speechResult = String(
+    formData.get("SpeechResult") ?? "",
+  ).trim();
 
-  // First request when somebody initially calls.
+  const callSid = String(formData.get("CallSid") ?? "");
+  const fromNumber = String(formData.get("From") ?? "");
+  const toNumber = String(formData.get("To") ?? "");
+
+  const previousResponseId =
+    url.searchParams.get("previousResponseId") ?? "";
+
   if (!speechResult && !previousResponseId) {
-    return gatherResponse(
-      "Thanks for calling Zen X. This is Ava. How can I help you today?",
-    );
+    return gatherResponse(GREETING);
   }
 
-  // Caller stayed silent during an active conversation.
   if (!speechResult) {
     return gatherResponse(
-      "Are you still there? Take your time. What else can I help you with?",
+      "Take your time. I'm still here.",
       previousResponseId,
     );
   }
@@ -178,42 +279,21 @@ export async function POST(req: Request) {
       throw new Error("OpenAI returned an empty reply.");
     }
 
-    const shouldEndCall = reply.startsWith("END_CALL:");
-    const spokenReply = reply
-      .replace(/^END_CALL:\s*/i, "")
-      .replace(/^CONTINUE:\s*/i, "")
-      .trim();
+    const shouldEndCall = /^END_CALL:/i.test(reply);
+    const spokenReply = cleanSpokenReply(reply);
 
     if (!shouldEndCall) {
       return gatherResponse(
-        spokenReply || "Got it. Could you tell me a little more?",
-        responseId,
+        spokenReply || "Sure. Go ahead.",
+        responseId || previousResponseId,
       );
     }
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_BASE_URL ||
-      process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-      "https://www.zennxai.com";
-
-    const normalizedBaseUrl = baseUrl.startsWith("http")
-      ? baseUrl
-      : `https://${baseUrl}`;
-
-    await fetch(`${normalizedBaseUrl}/api/voice/memory`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        callSid,
-        fromNumber,
-        toNumber,
-        transcript: speechResult,
-        direction: "inbound",
-      }),
-    }).catch((error) => {
-      console.error("VOICE MEMORY WEBHOOK ERROR:", error);
+    await saveCallMemory({
+      callSid,
+      fromNumber,
+      toNumber,
+      transcript: speechResult,
     });
 
     return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
@@ -221,7 +301,7 @@ export async function POST(req: Request) {
   <Say voice="${VOICE}">
     ${escapeXml(
       spokenReply ||
-        "Thank you. I've got everything I need, and someone from the business will follow up shortly.",
+        "Sounds good. Someone from Zen X will follow up shortly.",
     )}
   </Say>
   <Hangup />
@@ -230,7 +310,7 @@ export async function POST(req: Request) {
     console.error("VOICE AGENT ERROR:", error);
 
     return gatherResponse(
-      "Sorry about that. I had a brief technical issue. Could you say that one more time?",
+      "Sorry, I missed that for a second. Could you say it again?",
       previousResponseId,
     );
   }
