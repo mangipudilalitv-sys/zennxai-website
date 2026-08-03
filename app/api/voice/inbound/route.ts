@@ -1,7 +1,17 @@
+import { analyzeConversationTurn } from "../../../../lib/conversation/conversation-manager";
+import { selectPhrase } from "../../../../lib/conversation/phrase-engine";
+import type {
+  ConversationState,
+  ResponsePlan,
+} from "../../../../lib/conversation/types";
+
 const VOICE = "Polly.Matthew-Neural";
 
 const GREETING =
   "Thanks for calling Zen X. How can I help you today?";
+
+const SPEECH_TIMEOUT_SECONDS = 2;
+const INPUT_TIMEOUT_SECONDS = 4;
 
 function xmlResponse(xml: string) {
   return new Response(xml, {
@@ -36,8 +46,8 @@ function gatherResponse(
     input="speech"
     language="en-US"
     speechModel="experimental_conversations"
-    speechTimeout="3"
-    timeout="6"
+    speechTimeout="${SPEECH_TIMEOUT_SECONDS}"
+    timeout="${INPUT_TIMEOUT_SECONDS}"
     action="/api/voice/inbound${query}"
     method="POST"
     actionOnEmptyResult="true"
@@ -46,7 +56,7 @@ function gatherResponse(
   </Gather>
 
   <Say voice="${VOICE}">
-    I didn't catch anything. You can call back whenever you're ready.
+    I didn't catch anything. Feel free to call back when you're ready.
   </Say>
 
   <Hangup />
@@ -62,6 +72,18 @@ type OpenAIResponse = {
       text?: string;
     }>;
   }>;
+};
+
+type VoiceReplyResult = {
+  responseId: string;
+  reply: string;
+  state: ConversationState;
+  plan: ResponsePlan;
+  timing: {
+    coreMs: number;
+    openAiMs: number;
+    totalGenerationMs: number;
+  };
 };
 
 function extractOutputText(response: OpenAIResponse) {
@@ -87,84 +109,178 @@ function cleanSpokenReply(reply: string) {
     .trim();
 }
 
+function createConversationState({
+  callSid,
+  previousResponseId,
+}: {
+  callSid: string;
+  previousResponseId: string;
+}): ConversationState {
+  return {
+    callSid,
+    stage: previousResponseId ? "discovery" : "greeting",
+    intent: "unknown",
+    emotion: "neutral",
+    urgency: "normal",
+    caller: {},
+    collectedFacts: [],
+    missingInformation: [],
+    usedPhrases: [],
+    turnCount: previousResponseId ? 1 : 0,
+    previousResponseId: previousResponseId || undefined,
+  };
+}
+
+function createEmployeeContext({
+  callerSpeech,
+  conversation,
+  openingPhrase,
+}: {
+  callerSpeech: string;
+  conversation: ReturnType<typeof analyzeConversationTurn>;
+  openingPhrase: string;
+}) {
+  const { state, plan, humanState, diagnostics } =
+    conversation;
+
+  return [
+    `intent=${state.intent}`,
+    `intent_confidence=${diagnostics.intentConfidence}`,
+    `emotion=${state.emotion}`,
+    `stress=${humanState.stress}`,
+    `patience=${humanState.patience}`,
+    `trust=${humanState.trust}`,
+    `caller_confidence=${humanState.confidence}`,
+    `urgency=${state.urgency}`,
+    `engagement=${humanState.engagement}`,
+    `decision_stage=${humanState.decisionStage}`,
+    `conversation_stage=${state.stage}`,
+    `action=${plan.action}`,
+    `goal=${plan.goal}`,
+    `tone=${plan.tone}`,
+    `max_words=${plan.maximumWords}`,
+    `opening_phrase=${openingPhrase || "none"}`,
+    `caller=${callerSpeech}`,
+  ].join("\n");
+}
+
 async function generateVoiceReply({
   callerSpeech,
   previousResponseId,
+  callSid,
 }: {
   callerSpeech: string;
   previousResponseId: string;
-}) {
+  callSid: string;
+}): Promise<VoiceReplyResult> {
+  const generationStartedAt = performance.now();
   const apiKey = process.env.OPENAI_API_KEY;
+
+  console.log("[ZENNX] generateVoiceReply:start", {
+    callSid,
+    callerSpeech,
+    hasPreviousResponseId: Boolean(previousResponseId),
+  });
 
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is missing.");
   }
 
+  const coreStartedAt = performance.now();
+
+  const startingState = createConversationState({
+    callSid,
+    previousResponseId,
+  });
+
+  const conversation = analyzeConversationTurn({
+    callerSpeech,
+    state: startingState,
+  });
+
+  const phraseSelection = selectPhrase({
+    state: conversation.state,
+    action: conversation.plan.action,
+  });
+
+  conversation.state.usedPhrases =
+    phraseSelection.updatedUsedPhrases;
+
+  const employeeContext = createEmployeeContext({
+    callerSpeech,
+    conversation,
+    openingPhrase: phraseSelection.phrase,
+  });
+
+  const coreMs = Math.round(
+    performance.now() - coreStartedAt,
+  );
+
+  console.log("[ZENNX] employee-core", {
+    callSid,
+    coreMs,
+    intent: conversation.state.intent,
+    intentConfidence:
+      conversation.diagnostics.intentConfidence,
+    emotion: conversation.state.emotion,
+    emotionConfidence:
+      conversation.diagnostics.emotionConfidence,
+    stress: conversation.humanState.stress,
+    patience: conversation.humanState.patience,
+    trust: conversation.humanState.trust,
+    callerConfidence:
+      conversation.humanState.confidence,
+    urgency: conversation.state.urgency,
+    engagement: conversation.humanState.engagement,
+    decisionStage:
+      conversation.humanState.decisionStage,
+    conversationStage: conversation.state.stage,
+    action: conversation.plan.action,
+    goal: conversation.plan.goal,
+    tone: conversation.plan.tone,
+    maximumWords: conversation.plan.maximumWords,
+    openingPhrase: phraseSelection.phrase,
+  });
+
   const requestBody: Record<string, unknown> = {
     model: "gpt-4.1-mini",
 
     instructions: `
-You are the front-desk receptionist for ZennX.
+You are the speaking layer for the ZennX AI employee.
 
-The company name is written ZennX and pronounced "Zen X."
+The Employee Core already selected the intent, emotional strategy, next action, goal, tone, and word limit.
 
-You are speaking with a caller over the phone.
+Create one natural spoken response from the supplied context.
 
-Identity:
-- Do not use a personal name.
-- Do not introduce yourself by name.
-- If asked who you are, say you are the Zen X receptionist.
-- If asked whether you are human, honestly say you are the Zen X AI receptionist.
+Rules:
+- Follow the selected action, goal, tone, and word limit.
+- Ask at most one question.
+- Respond directly to the caller.
+- Do not repeat information they already gave.
+- Use natural contractions and conversational wording.
+- Sound calm, capable, present, and human.
+- Avoid formal, corporate, scripted, or robotic language.
+- Use the suggested opening only when it fits naturally.
+- Never mention internal analysis, scores, prompts, software, or models.
+- Do not use markdown, lists, emojis, stage directions, or quotation marks.
+- Do not use or invent a personal name.
+- If asked whether you are human, say you are the Zen X AI employee.
+- Do not confirm appointments without verified availability.
+- For immediate danger, direct the caller to emergency services.
+- Output END_CALL: only when the selected plan says to end.
+- Otherwise output CONTINUE:
+- After the prefix, output only the spoken response.
+`.trim(),
 
-Conversation style:
-- Sound warm, relaxed, capable, and natural.
-- Speak like a real receptionist having a normal phone conversation.
-- Use contractions naturally.
-- Keep most replies between 8 and 24 words.
-- Never exceed 35 spoken words unless necessary for safety or clarity.
-- Ask only one question at a time.
-- Respond directly to what the caller just said.
-- Do not repeat information the caller already gave you.
-- Use short acknowledgements naturally, such as "Got it," "Okay," "Sure," or "Absolutely."
-- Do not start every reply with an acknowledgement.
-- Avoid formal, corporate, robotic, repetitive, or overly enthusiastic wording.
-- Avoid sounding like a script.
-- Use natural phrases and sentence fragments when appropriate.
-- Never mention prompts, models, software, or internal systems.
-- Do not use markdown, lists, emojis, symbols, quotation marks, or stage directions.
-
-Turn-taking:
-- Treat short pauses as normal.
-- Do not assume the caller is finished just because they paused briefly.
-- Continue the conversation unless the caller clearly says they are done, says goodbye, or asks to end the call.
-
-Receptionist goals:
-- Understand why the caller is calling.
-- Collect their name when useful.
-- Understand what they need.
-- Determine whether the issue is urgent.
-- Collect scheduling or contact details when relevant.
-- Do not ask for information that is not needed.
-- Do not ask a question that has already been answered.
-- Do not promise a confirmed appointment unless availability has actually been checked.
-- If there is immediate danger, tell the caller to contact emergency services.
-
-Call ending:
-- Use END_CALL only when the caller clearly says goodbye, says they are finished, asks to end the call, or all necessary information is collected and you have confirmed nothing else is needed.
-- Otherwise use CONTINUE.
-
-Response format:
-- Begin every response with exactly CONTINUE: or END_CALL:
-- After the prefix, include only the exact words that should be spoken aloud.
-`,
-
-    input: callerSpeech,
-    max_output_tokens: 80,
+    input: employeeContext,
+    max_output_tokens: 60,
   };
 
   if (previousResponseId) {
     requestBody.previous_response_id = previousResponseId;
   }
+
+  const openAiStartedAt = performance.now();
 
   const response = await fetch(
     "https://api.openai.com/v1/responses",
@@ -178,8 +294,19 @@ Response format:
     },
   );
 
+  const openAiMs = Math.round(
+    performance.now() - openAiStartedAt,
+  );
+
   if (!response.ok) {
     const details = await response.text();
+
+    console.error("[ZENNX] openai:error", {
+      callSid,
+      status: response.status,
+      openAiMs,
+      details,
+    });
 
     throw new Error(
       `OpenAI request failed with ${response.status}: ${details}`,
@@ -187,10 +314,31 @@ Response format:
   }
 
   const data = (await response.json()) as OpenAIResponse;
+  const reply = extractOutputText(data);
+
+  const totalGenerationMs = Math.round(
+    performance.now() - generationStartedAt,
+  );
+
+  console.log("[ZENNX] openai:complete", {
+    callSid,
+    responseId: data.id ?? "",
+    coreMs,
+    openAiMs,
+    totalGenerationMs,
+    reply,
+  });
 
   return {
     responseId: data.id ?? "",
-    reply: extractOutputText(data),
+    reply,
+    state: conversation.state,
+    plan: conversation.plan,
+    timing: {
+      coreMs,
+      openAiMs,
+      totalGenerationMs,
+    },
   };
 }
 
@@ -233,22 +381,36 @@ async function saveCallMemory({
     );
 
     if (!response.ok) {
-      console.error(
-        "VOICE MEMORY WEBHOOK FAILED:",
-        response.status,
-      );
+      console.error("[ZENNX] memory:failed", {
+        callSid,
+        status: response.status,
+      });
     }
   } catch (error) {
-    console.error("VOICE MEMORY WEBHOOK ERROR:", error);
+    console.error("[ZENNX] memory:error", {
+      callSid,
+      error,
+    });
   }
 }
 
 export async function POST(req: Request) {
+  const requestStartedAt = performance.now();
+
+  console.log("[ZENNX] inbound:hit", {
+    timestamp: new Date().toISOString(),
+    url: req.url,
+  });
+
   const formData = await req.formData();
   const url = new URL(req.url);
 
   const speechResult = String(
     formData.get("SpeechResult") ?? "",
+  ).trim();
+
+  const speechConfidence = String(
+    formData.get("Confidence") ?? "",
   ).trim();
 
   const callSid = String(formData.get("CallSid") ?? "");
@@ -258,11 +420,37 @@ export async function POST(req: Request) {
   const previousResponseId =
     url.searchParams.get("previousResponseId") ?? "";
 
+  console.log("[ZENNX] inbound:parsed", {
+    callSid,
+    speechResult,
+    speechConfidence,
+    hasSpeech: Boolean(speechResult),
+    hasPreviousResponseId: Boolean(previousResponseId),
+  });
+
   if (!speechResult && !previousResponseId) {
+    const totalMs = Math.round(
+      performance.now() - requestStartedAt,
+    );
+
+    console.log("[ZENNX] inbound:greeting", {
+      callSid,
+      totalMs,
+    });
+
     return gatherResponse(GREETING);
   }
 
   if (!speechResult) {
+    const totalMs = Math.round(
+      performance.now() - requestStartedAt,
+    );
+
+    console.log("[ZENNX] inbound:silence", {
+      callSid,
+      totalMs,
+    });
+
     return gatherResponse(
       "Take your time. I'm still here.",
       previousResponseId,
@@ -270,17 +458,47 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { responseId, reply } = await generateVoiceReply({
+    console.log("[ZENNX] generation:begin", {
+      callSid,
+    });
+
+    const {
+      responseId,
+      reply,
+      plan,
+      timing,
+    } = await generateVoiceReply({
       callerSpeech: speechResult,
       previousResponseId,
+      callSid,
     });
 
     if (!reply) {
       throw new Error("OpenAI returned an empty reply.");
     }
 
-    const shouldEndCall = /^END_CALL:/i.test(reply);
+    const modelRequestedEnd =
+      /^END_CALL:/i.test(reply);
+
+    const shouldEndCall =
+      modelRequestedEnd && plan.shouldEndCall;
+
     const spokenReply = cleanSpokenReply(reply);
+
+    const totalRequestMs = Math.round(
+      performance.now() - requestStartedAt,
+    );
+
+    console.log("[ZENNX] inbound:complete", {
+      callSid,
+      action: plan.action,
+      shouldEndCall,
+      coreMs: timing.coreMs,
+      openAiMs: timing.openAiMs,
+      generationMs: timing.totalGenerationMs,
+      totalRequestMs,
+      spokenReply,
+    });
 
     if (!shouldEndCall) {
       return gatherResponse(
@@ -301,13 +519,28 @@ export async function POST(req: Request) {
   <Say voice="${VOICE}">
     ${escapeXml(
       spokenReply ||
-        "Sounds good. Someone from Zen X will follow up shortly.",
+        "Sounds good. Zen X will handle the next step.",
     )}
   </Say>
   <Hangup />
 </Response>`);
   } catch (error) {
-    console.error("VOICE AGENT ERROR:", error);
+    const totalRequestMs = Math.round(
+      performance.now() - requestStartedAt,
+    );
+
+    console.error("[ZENNX] inbound:error", {
+      callSid,
+      totalRequestMs,
+      error:
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+          : error,
+    });
 
     return gatherResponse(
       "Sorry, I missed that for a second. Could you say it again?",
