@@ -191,6 +191,22 @@ function parseRealtimeEvent(data: WebSocket.RawData): RealtimeEvent {
   return JSON.parse(text) as RealtimeEvent;
 }
 
+function getResponseId(
+  response: unknown,
+  fallback?: string,
+): string | undefined {
+  if (
+    response &&
+    typeof response === "object" &&
+    "id" in response &&
+    typeof (response as { id?: unknown }).id === "string"
+  ) {
+    return (response as { id: string }).id;
+  }
+
+  return fallback;
+}
+
 function getErrorMessage(event: RealtimeEvent): string {
   const error = event.error;
 
@@ -345,6 +361,22 @@ export class VoiceSession {
   private assistantSpeaking = false;
   private pendingEndCall = false;
   private interruptionCount = 0;
+
+  /**
+   * Interruption subsystem state.
+   *
+   * outputLocked is enabled the instant we detect the caller speaking
+   * over the assistant, and stays enabled until the response we
+   * cancelled has fully finished. While locked, all outbound audio
+   * deltas are dropped so nothing stale reaches Twilio.
+   *
+   * pendingCancelResponseId tracks which response.done we are waiting
+   * for before it is safe to release the lock. Using an id (rather than
+   * a boolean) keeps rapid, repeated interruption events from releasing
+   * the lock early or double-counting.
+   */
+  private outputLocked = false;
+  private pendingCancelResponseId?: string;
 
   private readonly startedAt = new Date().toISOString();
   private endedAt?: string;
@@ -578,9 +610,64 @@ export class VoiceSession {
 
   /**
    * Cancels current model speech and clears queued Twilio audio.
+   *
+   * Kept as a public method for callers outside the realtime event loop.
+   * The realtime socket handler uses the same underlying pipeline
+   * (beginInterruption / finishInterruption) directly, without awaiting,
+   * so the caller-facing "instant" behavior is identical either way.
    */
   public async interrupt(): Promise<void> {
-    if (!this.assistantSpeaking) {
+    const { wasSpeaking, responseId } = this.beginInterruption();
+
+    if (!wasSpeaking) {
+      return;
+    }
+
+    await this.callbacks.onClearOutput?.();
+    this.finishInterruption(wasSpeaking, responseId);
+  }
+
+  /**
+   * Step 1 of the interruption pipeline. Synchronous and side-effect
+   * minimal so it can run the instant speech_started is observed:
+   *  - enables the output lock immediately, before any I/O, so any
+   *    response.audio.delta events already in flight get dropped.
+   *  - records which response (if any) we are cancelling, so the lock
+   *    is released only once that specific response fully finishes.
+   *  - self-corrects: if nothing was speaking and nothing is already
+   *    pending cancellation, there is nothing to wait for, so the lock
+   *    releases immediately instead of sticking on.
+   */
+  private beginInterruption(): {
+    wasSpeaking: boolean;
+    responseId?: string;
+  } {
+    const wasSpeaking = this.assistantSpeaking;
+    const responseId = this.activeResponseId;
+
+    this.outputLocked = true;
+
+    if (wasSpeaking) {
+      this.pendingCancelResponseId = responseId;
+    } else if (!this.pendingCancelResponseId) {
+      this.outputLocked = false;
+    }
+
+    return { wasSpeaking, responseId };
+  }
+
+  /**
+   * Step 3 of the interruption pipeline: sends response.cancel and
+   * updates bookkeeping/logging. Split from beginInterruption so the
+   * realtime event handler can fire the Twilio "clear" callback in
+   * between (matching the required lock -> clear -> cancel ordering)
+   * while everything still happens within a single synchronous tick.
+   */
+  private finishInterruption(
+    wasSpeaking: boolean,
+    responseId?: string,
+  ): void {
+    if (!wasSpeaking) {
       return;
     }
 
@@ -590,15 +677,13 @@ export class VoiceSession {
     if (this.isSocketOpen()) {
       this.send({
         type: "response.cancel",
-        response_id: this.activeResponseId,
+        response_id: responseId,
       });
     }
 
-    await this.callbacks.onClearOutput?.();
-
     this.log("info", "Assistant response interrupted.", {
       callSid: this.callSid,
-      responseId: this.activeResponseId,
+      responseId,
       interruptionCount: this.interruptionCount,
     });
   }
@@ -707,7 +792,15 @@ Do not add anything before or after it.
       }
 
       case "input_audio_buffer.speech_started": {
-        await this.interrupt();
+        // Deterministic, synchronous interruption pipeline — no awaits
+        // before these run, so the lock, the Twilio "clear", and the
+        // response.cancel all fire on the same tick the event arrives.
+        const { wasSpeaking, responseId } =
+          this.beginInterruption();
+
+        void this.callbacks.onClearOutput?.();
+
+        this.finishInterruption(wasSpeaking, responseId);
         break;
       }
 
@@ -737,15 +830,10 @@ Do not add anything before or after it.
       }
 
       case "response.created": {
-        const response = event.response;
+        const responseId = getResponseId(event.response);
 
-        if (
-          response &&
-          typeof response === "object" &&
-          "id" in response &&
-          typeof response.id === "string"
-        ) {
-          this.activeResponseId = response.id;
+        if (responseId) {
+          this.activeResponseId = responseId;
         }
 
         this.assistantSpeaking = true;
@@ -755,6 +843,21 @@ Do not add anything before or after it.
 
       case "response.output_audio.delta":
       case "response.audio.delta": {
+        if (this.outputLocked) {
+          // Interruption in progress: drop any audio still arriving
+          // from the response we're cancelling instead of forwarding
+          // it to Twilio.
+          this.log(
+            "debug",
+            "Dropped audio delta while output lock is active.",
+            {
+              callSid: this.callSid,
+              responseId: this.activeResponseId,
+            },
+          );
+          break;
+        }
+
         const delta =
           typeof event.delta === "string"
             ? event.delta
@@ -800,8 +903,35 @@ Do not add anything before or after it.
       }
 
       case "response.done": {
+        const finishedResponseId = getResponseId(
+          event.response,
+          this.activeResponseId,
+        );
+
         this.assistantSpeaking = false;
         this.activeResponseId = undefined;
+
+        // Release the output lock only once the specific response we
+        // cancelled has completely finished. Guards against a race
+        // where a stray/late response.done from a different response
+        // would release the lock too early.
+        if (
+          this.outputLocked &&
+          (!this.pendingCancelResponseId ||
+            this.pendingCancelResponseId === finishedResponseId)
+        ) {
+          this.outputLocked = false;
+          this.pendingCancelResponseId = undefined;
+
+          this.log(
+            "info",
+            "Output lock released after cancelled response finished.",
+            {
+              callSid: this.callSid,
+              responseId: finishedResponseId,
+            },
+          );
+        }
 
         await this.persistMemory();
         await this.emitState();
