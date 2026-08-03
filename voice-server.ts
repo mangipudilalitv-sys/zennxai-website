@@ -23,7 +23,7 @@ const MAX_BUFFERED_AUDIO_CHUNKS = 500;
  * We will measure the real result and adjust this value until
  * the caller experiences roughly 2.2–2.5 seconds total silence.
  */
-const SILENCE_DURATION_MS = 1200;
+const SILENCE_DURATION_MS = 850;
 
 type TwilioConnectedEvent = {
   event: "connected";
@@ -359,8 +359,8 @@ webSocketServer.on(
          */
         silenceDurationMs: SILENCE_DURATION_MS,
 
-        prefixPaddingMs: 300,
-        vadThreshold: 0.5,
+        prefixPaddingMs: 240,
+        vadThreshold: 0.42,
         idleTimeoutMs: 7000,
         voiceSpeed: 1.05,
 

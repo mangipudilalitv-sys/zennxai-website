@@ -344,8 +344,6 @@ export class VoiceSession {
 
   private assistantSpeaking = false;
   private pendingEndCall = false;
-  private latencyMarks: Record<string, number> = {};
-  private audioDeliveryChain: Promise<void> = Promise.resolve();
   private interruptionCount = 0;
 
   private readonly startedAt = new Date().toISOString();
@@ -709,7 +707,6 @@ Do not add anything before or after it.
       }
 
       case "input_audio_buffer.speech_started": {
-        this.markLatency("vad");
         await this.interrupt();
         break;
       }
@@ -764,22 +761,7 @@ Do not add anything before or after it.
             : "";
 
         if (delta) {
-          if (!this.latencyMarks["first_audio"]) {
-            this.markLatency("first_audio");
-            this.flushLatency();
-          }
-
-          this.audioDeliveryChain = this.audioDeliveryChain
-            .then(async () => {
-              await this.callbacks.onAudioDelta(delta);
-            })
-            .catch((error) => {
-              void this.reportError(
-                new Error(
-                  `Failed to deliver realtime audio: ${asError(error).message}`,
-                ),
-              );
-            });
+          await this.callbacks.onAudioDelta(delta);
         }
 
         break;
@@ -858,28 +840,10 @@ Do not add anything before or after it.
     transcript: string,
   ): Promise<void> {
     const turnStartedAt = performance.now();
-    this.markLatency("turn_start");
-    this.markLatency("transcript");
 
     this.userTranscripts.push(transcript);
 
-    try {
-      void Promise.resolve(
-        this.callbacks.onUserTranscript?.(transcript),
-      ).catch((error) => {
-        void this.reportError(
-          new Error(
-            `User transcript callback failed: ${asError(error).message}`,
-          ),
-        );
-      });
-    } catch (error) {
-      void this.reportError(
-        new Error(
-          `User transcript callback failed: ${asError(error).message}`,
-        ),
-      );
-    }
+    await this.callbacks.onUserTranscript?.(transcript);
 
     const conversation = analyzeConversationTurn({
       callerSpeech: transcript,
@@ -931,10 +895,9 @@ Do not add anything before or after it.
       ),
     });
 
-    this.markLatency("core");
+    await this.emitState();
 
     this.assistantSpeaking = true;
-    this.markLatency("response_create");
 
     this.send({
       type: "response.create",
@@ -944,58 +907,10 @@ Do not add anything before or after it.
       },
     });
 
-    void this.emitState().catch((error) => {
-      void this.reportError(
-        new Error(
-          `State callback failed: ${asError(error).message}`,
-        ),
-      );
-    });
-
     this.log("info", "Realtime response requested.", {
       callSid: this.callSid,
       totalTurnMs: Math.round(performance.now() - turnStartedAt),
     });
-  }
-
-
-  private markLatency(name: string): void {
-    this.latencyMarks[name] = performance.now();
-  }
-
-  private flushLatency(): void {
-    const marks = this.latencyMarks;
-    const turnStart = marks["turn_start"];
-    const transcript = marks["transcript"];
-    const core = marks["core"];
-    const responseCreate = marks["response_create"];
-    const firstAudio = marks["first_audio"];
-
-    if (
-      turnStart === undefined ||
-      transcript === undefined ||
-      core === undefined ||
-      responseCreate === undefined ||
-      firstAudio === undefined
-    ) {
-      return;
-    }
-
-    this.log("info", "Latency profile", {
-      transcriptToCoreMs: Math.round(core - transcript),
-      coreToResponseCreateMs: Math.round(
-        responseCreate - core,
-      ),
-      responseCreateToFirstAudioMs: Math.round(
-        firstAudio - responseCreate,
-      ),
-      transcriptToFirstAudioMs: Math.round(
-        firstAudio - transcript,
-      ),
-      totalTurnMs: Math.round(firstAudio - turnStart),
-    });
-
-    this.latencyMarks = {};
   }
 
   private async restoreMemory(): Promise<void> {
