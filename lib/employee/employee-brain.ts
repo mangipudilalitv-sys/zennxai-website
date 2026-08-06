@@ -1,69 +1,150 @@
-import type { EmployeeAction } from "./employee-actions";
-import type { NormalizedEmployeeEvent } from "./employee-understanding";
+import { ConversationState } from "./conversation-state";
+import { EmployeeGoal } from "./goal-engine";
 
-export interface EmployeeDecision {
-  action: EmployeeAction;
-  priority: "low" | "normal" | "high" | "critical";
-  reason: string;
-  shouldExecute: boolean;
+export type EmployeeAction =
+  | "NO_ACTION"
+  | "RESPOND"
+  | "REQUEST_ESTIMATE"
+  | "BOOK_APPOINTMENT"
+  | "FOLLOW_UP"
+  | "UPDATE_CRM"
+  | "SEND_SMS"
+  | "SEND_EMAIL"
+  | "ESCALATE_OWNER";
+
+export interface DecisionContext {
+  message: string;
+
+  conversation?: ConversationState;
+
+  goal?: EmployeeGoal;
+
+  qualificationComplete: boolean;
+
+  confidence: number;
 }
 
-const estimateRequestPatterns = [
-  /\bestimate\b/i,
-  /\bquote\b/i,
-  /\bhow much\b/i,
-  /\bprice\b/i,
-  /\bcost\b/i,
-  /\breplacement\b/i,
-  /\brepair\b/i,
-  /\binspection\b/i,
-  /\bleak\b/i,
-  /\broof\b/i,
-  /\bgutter\b/i,
-  /\bhvac\b/i,
-  /\bair conditioning\b/i,
-  /\bplumb(?:er|ing)?\b/i,
-  /\belectric(?:al|ian)?\b/i,
-];
+export interface DecisionResult {
+  action: EmployeeAction;
 
-const appointmentPatterns = [
-  /\bappointment\b/i,
-  /\bschedule\b/i,
-  /\bbook\b/i,
-  /\bavailability\b/i,
-  /\bcome out\b/i,
-  /\bvisit\b/i,
-];
+  score: number;
+
+  reasoning: string[];
+}
 
 export class EmployeeBrain {
-  public decideNextAction(
-    event: NormalizedEmployeeEvent,
-  ): EmployeeDecision {
-    const message = event.content.trim();
+  public decide(
+    context: DecisionContext,
+  ): DecisionResult {
+    const decisions: DecisionResult[] = [
+      this.scoreEstimate(context),
+      this.scoreBooking(context),
+      this.scoreFollowUp(context),
+      this.scoreRespond(context),
+    ];
 
-    if (appointmentPatterns.some((pattern) => pattern.test(message))) {
-      return {
-        action: "BOOK_APPOINTMENT",
-        priority: "high",
-        reason: "Customer requested scheduling or availability.",
-        shouldExecute: true,
-      };
+    decisions.sort(
+      (a, b) => b.score - a.score,
+    );
+
+    return decisions[0];
+  }
+
+  private scoreEstimate(
+    context: DecisionContext,
+  ): DecisionResult {
+    let score = 0;
+
+    const reasoning: string[] = [];
+
+    const text =
+      context.message.toLowerCase();
+
+    if (
+      text.includes("estimate") ||
+      text.includes("quote")
+    ) {
+      score += 80;
+      reasoning.push(
+        "Customer requested pricing.",
+      );
     }
 
-    if (estimateRequestPatterns.some((pattern) => pattern.test(message))) {
-      return {
-        action: "REQUEST_ESTIMATE",
-        priority: "high",
-        reason: "Customer described a service or estimate request.",
-        shouldExecute: true,
-      };
+    if (
+      context.goal?.type ===
+      "QUALIFY_LEAD"
+    ) {
+      score += 20;
+      reasoning.push(
+        "Continuing existing goal.",
+      );
     }
 
     return {
+      action: "REQUEST_ESTIMATE",
+      score,
+      reasoning,
+    };
+  }
+
+  private scoreBooking(
+    context: DecisionContext,
+  ): DecisionResult {
+    let score = 0;
+
+    const reasoning: string[] = [];
+
+    if (
+      context.qualificationComplete
+    ) {
+      score += 90;
+
+      reasoning.push(
+        "Lead is fully qualified.",
+      );
+    }
+
+    return {
+      action: "BOOK_APPOINTMENT",
+      score,
+      reasoning,
+    };
+  }
+
+  private scoreFollowUp(
+    context: DecisionContext,
+  ): DecisionResult {
+    let score = 0;
+
+    const reasoning: string[] = [];
+
+    if (
+      context.conversation?.stage ===
+      "FOLLOW_UP"
+    ) {
+      score += 75;
+
+      reasoning.push(
+        "Conversation requires follow-up.",
+      );
+    }
+
+    return {
+      action: "FOLLOW_UP",
+      score,
+      reasoning,
+    };
+  }
+
+  private scoreRespond(
+    context: DecisionContext,
+  ): DecisionResult {
+    return {
       action: "RESPOND",
-      priority: "normal",
-      reason: "No actionable service request was identified yet.",
-      shouldExecute: true,
+      score: 10,
+      reasoning: [
+        "Default conversational response.",
+      ],
     };
   }
 }

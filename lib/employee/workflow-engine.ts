@@ -60,7 +60,7 @@ export class WorkflowEngine {
   ): WorkflowState {
     const existing = this.states.get(customerId);
 
-    const completedObjectives =
+    const completedObjectives: WorkflowObjective[] =
       requiredQualificationOrder
         .filter(({ field }) => Boolean(qualification[field]))
         .map(({ objective }) => objective);
@@ -109,16 +109,18 @@ export class WorkflowEngine {
       return undefined;
     }
 
+    const completedObjectives = Array.from(
+      new Set<WorkflowObjective>([
+        ...existing.completedObjectives,
+        "BOOK_APPOINTMENT",
+      ]),
+    );
+
     const state: WorkflowState = {
       ...existing,
       stage: "BOOKED",
       nextObjective: "FOLLOW_UP",
-      completedObjectives: [
-        ...new Set([
-          ...existing.completedObjectives,
-          "BOOK_APPOINTMENT",
-        ]),
-      ],
+      completedObjectives,
       updatedAt: new Date().toISOString(),
     };
 
@@ -136,17 +138,19 @@ export class WorkflowEngine {
       return undefined;
     }
 
+    const completedObjectives = Array.from(
+      new Set<WorkflowObjective>([
+        ...existing.completedObjectives,
+        "CLOSE_SALE",
+      ]),
+    );
+
     const state: WorkflowState = {
       ...existing,
       goal: "CLOSE_SALE",
       stage: "CLOSED",
       nextObjective: "NO_ACTION",
-      completedObjectives: [
-        ...new Set([
-          ...existing.completedObjectives,
-          "CLOSE_SALE",
-        ]),
-      ],
+      completedObjectives,
       updatedAt: new Date().toISOString(),
     };
 
