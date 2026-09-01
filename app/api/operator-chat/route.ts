@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { supabaseServer } from "@/app/lib/supabase-server";
+import { isAuthorizedInternalRequest } from "@/app/lib/internal-api-auth";
 
 import {
   getSystemSnapshot,
@@ -8,13 +10,23 @@ import {
 
 export async function POST(req: Request) {
   try {
+    if (!isAuthorizedInternalRequest(req)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 },
+      );
+    }
+
     const body = await req.json();
 
     const message = body.message || "";
 
-    const snapshot = await getSystemSnapshot();
+    const snapshot = await getSystemSnapshot(supabaseServer);
 
-    const decision = await makeOperatorDecision(message);
+    const decision = await makeOperatorDecision(message, supabaseServer);
 
     let autonomousResult = null;
 
@@ -22,7 +34,7 @@ export async function POST(req: Request) {
       decision.intent === "autonomous_loop" ||
       decision.priority === "high"
     ) {
-      autonomousResult = await runAutonomousScan();
+      autonomousResult = await runAutonomousScan(supabaseServer);
     }
 
     const response = {

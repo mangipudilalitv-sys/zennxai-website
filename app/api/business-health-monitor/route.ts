@@ -1,12 +1,22 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
-import { supabase } from "@/app/lib/supabase";
+import { isAuthorizedInternalRequest } from "@/app/lib/internal-api-auth";
+import { supabaseServer as supabase } from "@/app/lib/supabase-server";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function POST() {
+export async function POST(req: Request) {
+  if (!isAuthorizedInternalRequest(req)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Unauthorized",
+      },
+      { status: 401 },
+    );
+  }
   try {
     const { data: leads } = await supabase
       .from("leads")

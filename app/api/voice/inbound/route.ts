@@ -1,3 +1,4 @@
+import { isValidTwilioFormRequest } from "@/app/lib/twilio-webhook-auth";
 import { analyzeConversationTurn } from "../../../../lib/conversation/conversation-manager";
 import { selectPhrase } from "../../../../lib/conversation/phrase-engine";
 import type {
@@ -369,6 +370,7 @@ async function saveCallMemory({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.ZENNX_INTERNAL_API_SECRET || ""}`,
         },
         body: JSON.stringify({
           callSid,
@@ -403,6 +405,22 @@ export async function POST(req: Request) {
   });
 
   const formData = await req.formData();
+
+  const validTwilioRequest =
+    await isValidTwilioFormRequest(
+      req,
+      formData,
+    );
+
+  if (!validTwilioRequest) {
+    console.warn("[ZENNX] inbound:unauthorized");
+
+    return new Response(
+      "Unauthorized",
+      { status: 401 },
+    );
+  }
+
   const url = new URL(req.url);
 
   const speechResult = String(

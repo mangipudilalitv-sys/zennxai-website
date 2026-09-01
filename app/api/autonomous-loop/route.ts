@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
-import { supabase } from "@/app/lib/supabase";
+import { isAuthorizedInternalRequest } from "@/app/lib/internal-api-auth";
+import { supabaseServer as supabase } from "@/app/lib/supabase-server";
 import {
   AVAILABLE_OPERATORS,
   getOperatorPerformance,
@@ -96,11 +97,31 @@ function fallbackLoop(reason: string) {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  if (!isAuthorizedInternalRequest(req)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Unauthorized",
+      },
+      { status: 401 },
+    );
+  }
+
   return runLoop();
 }
 
-export async function POST() {
+export async function POST(req: Request) {
+  if (!isAuthorizedInternalRequest(req)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Unauthorized",
+      },
+      { status: 401 },
+    );
+  }
+
   return runLoop();
 }
 
@@ -366,6 +387,7 @@ ${description}
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.ZENNX_INTERNAL_API_SECRET || ""}`,
             },
             body: JSON.stringify({
               taskId: task.id,

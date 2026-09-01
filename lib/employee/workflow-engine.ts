@@ -52,36 +52,84 @@ const requiredQualificationOrder: Array<{
 ];
 
 export class WorkflowEngine {
-  private readonly states = new Map<string, WorkflowState>();
+  private readonly states =
+    new Map<string, WorkflowState>();
 
   public update(
     customerId: string,
     qualification: ExtractedLeadInformation,
   ): WorkflowState {
-    const existing = this.states.get(customerId);
+    const existing =
+      this.states.get(customerId);
+
+    //
+    // Merge new qualification information with
+    // everything already collected for this customer.
+    //
+    const mergedQualification: ExtractedLeadInformation = {
+      ...existing?.qualification,
+      ...Object.fromEntries(
+        Object.entries(qualification).filter(
+          ([, value]) =>
+            value !== undefined &&
+            value !== null &&
+            value !== "",
+        ),
+      ),
+    };
 
     const completedObjectives: WorkflowObjective[] =
       requiredQualificationOrder
-        .filter(({ field }) => Boolean(qualification[field]))
-        .map(({ objective }) => objective);
+        .filter(({ field }) =>
+          Boolean(
+            mergedQualification[field],
+          ),
+        )
+        .map(
+          ({ objective }) =>
+            objective,
+        );
 
     const nextMissing =
       requiredQualificationOrder.find(
-        ({ field }) => !qualification[field],
+        ({ field }) =>
+          !mergedQualification[field],
       );
 
-    const stage: WorkflowStage =
-      nextMissing
-        ? "QUALIFYING"
-        : existing?.stage === "BOOKED"
-          ? "BOOKED"
-          : "READY_TO_BOOK";
+    let stage: WorkflowStage;
 
-    const nextObjective: WorkflowObjective =
-      nextMissing?.objective ??
-      (stage === "READY_TO_BOOK"
-        ? "BOOK_APPOINTMENT"
-        : "NO_ACTION");
+    if (existing?.stage === "CLOSED") {
+      stage = "CLOSED";
+    } else if (
+      existing?.stage === "FOLLOW_UP"
+    ) {
+      stage = "FOLLOW_UP";
+    } else if (
+      existing?.stage === "BOOKED"
+    ) {
+      stage = "BOOKED";
+    } else if (nextMissing) {
+      stage = "QUALIFYING";
+    } else {
+      stage = "READY_TO_BOOK";
+    }
+
+    let nextObjective: WorkflowObjective;
+
+    if (stage === "CLOSED") {
+      nextObjective = "NO_ACTION";
+    } else if (
+      stage === "FOLLOW_UP" ||
+      stage === "BOOKED"
+    ) {
+      nextObjective = "FOLLOW_UP";
+    } else if (nextMissing) {
+      nextObjective =
+        nextMissing.objective;
+    } else {
+      nextObjective =
+        "BOOK_APPOINTMENT";
+    }
 
     const state: WorkflowState = {
       customerId,
@@ -90,12 +138,17 @@ export class WorkflowEngine {
         "BOOK_QUALIFIED_ESTIMATE",
       stage,
       nextObjective,
-      qualification,
+      qualification:
+        mergedQualification,
       completedObjectives,
-      updatedAt: new Date().toISOString(),
+      updatedAt:
+        new Date().toISOString(),
     };
 
-    this.states.set(customerId, state);
+    this.states.set(
+      customerId,
+      state,
+    );
 
     return state;
   }
@@ -103,28 +156,34 @@ export class WorkflowEngine {
   public markBooked(
     customerId: string,
   ): WorkflowState | undefined {
-    const existing = this.states.get(customerId);
+    const existing =
+      this.states.get(customerId);
 
     if (!existing) {
       return undefined;
     }
 
-    const completedObjectives = Array.from(
-      new Set<WorkflowObjective>([
-        ...existing.completedObjectives,
-        "BOOK_APPOINTMENT",
-      ]),
-    );
+    const completedObjectives =
+      Array.from(
+        new Set<WorkflowObjective>([
+          ...existing.completedObjectives,
+          "BOOK_APPOINTMENT",
+        ]),
+      );
 
     const state: WorkflowState = {
       ...existing,
       stage: "BOOKED",
       nextObjective: "FOLLOW_UP",
       completedObjectives,
-      updatedAt: new Date().toISOString(),
+      updatedAt:
+        new Date().toISOString(),
     };
 
-    this.states.set(customerId, state);
+    this.states.set(
+      customerId,
+      state,
+    );
 
     return state;
   }
@@ -132,18 +191,20 @@ export class WorkflowEngine {
   public markClosed(
     customerId: string,
   ): WorkflowState | undefined {
-    const existing = this.states.get(customerId);
+    const existing =
+      this.states.get(customerId);
 
     if (!existing) {
       return undefined;
     }
 
-    const completedObjectives = Array.from(
-      new Set<WorkflowObjective>([
-        ...existing.completedObjectives,
-        "CLOSE_SALE",
-      ]),
-    );
+    const completedObjectives =
+      Array.from(
+        new Set<WorkflowObjective>([
+          ...existing.completedObjectives,
+          "CLOSE_SALE",
+        ]),
+      );
 
     const state: WorkflowState = {
       ...existing,
@@ -151,10 +212,14 @@ export class WorkflowEngine {
       stage: "CLOSED",
       nextObjective: "NO_ACTION",
       completedObjectives,
-      updatedAt: new Date().toISOString(),
+      updatedAt:
+        new Date().toISOString(),
     };
 
-    this.states.set(customerId, state);
+    this.states.set(
+      customerId,
+      state,
+    );
 
     return state;
   }
@@ -162,6 +227,8 @@ export class WorkflowEngine {
   public get(
     customerId: string,
   ): WorkflowState | undefined {
-    return this.states.get(customerId);
+    return this.states.get(
+      customerId,
+    );
   }
 }

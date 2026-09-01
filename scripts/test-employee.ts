@@ -1,23 +1,42 @@
 import { Employee } from "../lib/employee/employee";
 
 async function main() {
-  const employee = new Employee();
+  const employee =
+    new Employee();
+
+  const testPhone =
+    process.env.TEST_CUSTOMER_PHONE;
+
+  if (!testPhone) {
+    throw new Error(
+      "TEST_CUSTOMER_PHONE is required for the live employee test.",
+    );
+  }
 
   const messages = [
     "Hi, my name is John. I need a roof replacement in Dallas. It's pretty urgent.",
-    "My phone number is 817-555-1234.",
+    `My phone number is ${testPhone}.`,
     "Tomorrow afternoon works best.",
   ];
 
   for (const content of messages) {
-    const result = await employee.process({
-      source: "phone",
-      customerId: "customer_001",
-      content,
-      timestamp: new Date(),
-    });
+    const result =
+      await employee.process({
+        source: "phone",
+        customerId:
+          "customer_001",
+        content,
+        timestamp:
+          new Date(),
+      });
 
-    console.log(JSON.stringify(result, null, 2));
+    console.log(
+      JSON.stringify(
+        result,
+        null,
+        2,
+      ),
+    );
   }
 }
 

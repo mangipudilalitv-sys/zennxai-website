@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { isAuthorizedInternalRequest } from "@/app/lib/internal-api-auth";
 import OpenAI from "openai";
-import { supabase } from "@/app/lib/supabase";
+import { supabaseServer as supabase } from "@/app/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,16 @@ function safeUrgency(value: string | undefined): "low" | "medium" | "high" {
 
 export async function POST(req: Request) {
   try {
+    if (!isAuthorizedInternalRequest(req)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 },
+      );
+    }
+
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("Missing OPENAI_API_KEY");
     }

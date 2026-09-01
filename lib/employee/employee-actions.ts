@@ -4,6 +4,9 @@ import {
 } from "./information-extractor";
 
 import { LeadMemory } from "./lead-memory";
+import { AppointmentService } from "@/lib/services/appointment-service";
+import { SmsExecutor } from "@/lib/employee/execution/sms-executor";
+import { FollowUpExecutor } from "@/lib/employee/execution/followup-executor";
 
 export type EmployeeAction =
   | "NO_ACTION"
@@ -19,8 +22,10 @@ export type EmployeeAction =
 
 export interface EmployeeActionInput {
   customerId?: string;
+  businessId?: string;
   content: string;
   source: string;
+  qualification?: ExtractedLeadInformation;
 }
 
 export type LeadQualificationField =
@@ -49,7 +54,7 @@ export interface EmployeeActionResult {
   success: boolean;
   action: EmployeeAction;
   message: string;
-  data?: EmployeeLeadRecord;
+  data?: unknown;
 }
 
 const requiredQualificationFields: LeadQualificationField[] = [
@@ -61,7 +66,10 @@ const requiredQualificationFields: LeadQualificationField[] = [
   "preferredTime",
 ];
 
-const qualificationQuestions: Record<LeadQualificationField, string> = {
+const qualificationQuestions: Record<
+  LeadQualificationField,
+  string
+> = {
   name: "What's your name?",
   phone: "What's the best phone number to reach you?",
   serviceType: "What type of service do you need?",
@@ -71,12 +79,29 @@ const qualificationQuestions: Record<LeadQualificationField, string> = {
 };
 
 export class EmployeeActions {
-  private readonly extractor = new InformationExtractor();
-  private readonly leadMemory = new LeadMemory();
+  private readonly extractor =
+    new InformationExtractor();
 
-  private readonly leadIds = new Map<string, string>();
-  private readonly leadCreatedAt = new Map<string, string>();
-  private readonly leadSummaries = new Map<string, string[]>();
+  private readonly leadMemory =
+    new LeadMemory();
+
+  private readonly appointments =
+    new AppointmentService();
+
+  private readonly sms =
+    new SmsExecutor();
+
+  private readonly followUps =
+    new FollowUpExecutor();
+
+  private readonly leadIds =
+    new Map<string, string>();
+
+  private readonly leadCreatedAt =
+    new Map<string, string>();
+
+  private readonly leadSummaries =
+    new Map<string, string[]>();
 
   public async execute(
     action: EmployeeAction,
@@ -87,7 +112,10 @@ export class EmployeeActions {
         return this.processEstimateLead(input);
 
       case "RESPOND":
-        if (this.hasExistingLead(input)) {
+        if (
+          this.hasExistingLead(input) ||
+          this.hasLeadQualification(input)
+        ) {
           return this.processEstimateLead(input);
         }
 
@@ -97,10 +125,7 @@ export class EmployeeActions {
         );
 
       case "BOOK_APPOINTMENT":
-        return this.createWorkflowResult(
-          action,
-          "Appointment workflow started.",
-        );
+        return this.bookAppointment(input);
 
       case "UPDATE_CRM":
         return this.createWorkflowResult(
@@ -109,10 +134,7 @@ export class EmployeeActions {
         );
 
       case "SEND_SMS":
-        return this.createWorkflowResult(
-          action,
-          "SMS workflow started.",
-        );
+        return this.sendSms(input);
 
       case "SEND_EMAIL":
         return this.createWorkflowResult(
@@ -127,10 +149,7 @@ export class EmployeeActions {
         );
 
       case "FOLLOW_UP":
-        return this.createWorkflowResult(
-          action,
-          "Follow-up workflow started.",
-        );
+        return this.scheduleFollowUp(input);
 
       case "ESCALATE_OWNER":
         return this.createWorkflowResult(
@@ -147,44 +166,305 @@ export class EmployeeActions {
     }
   }
 
+  private async bookAppointment(
+    input: EmployeeActionInput,
+  ): Promise<EmployeeActionResult> {
+    if (!input.businessId) {
+      return {
+        success: false,
+        action: "BOOK_APPOINTMENT",
+        message: "Cannot book appointment without a business ID.",
+      };
+    }
+
+    if (!input.customerId) {
+      return {
+        success: false,
+        action: "BOOK_APPOINTMENT",
+        message: "Cannot book appointment without a customer ID.",
+      };
+    }
+
+    const qualification =
+      input.qualification ??
+      this.extractor.extract(input.content);
+
+    if (!qualification.preferredTime) {
+      return {
+        success: false,
+        action: "BOOK_APPOINTMENT",
+        message: "Cannot book appointment without a preferred time.",
+      };
+    }
+
+    const startTime =
+      this.resolveAppointmentTime(
+        qualification.preferredTime,
+      );
+
+    if (!startTime) {
+      return {
+        success: false,
+        action: "BOOK_APPOINTMENT",
+        message:
+          "Preferred appointment time needs clarification before booking.",
+        data: {
+          preferredTime: qualification.preferredTime,
+        },
+      };
+    }
+
+    try {
+      const appointment =
+        await this.appointments.create({
+          businessId: input.businessId,
+          customerId: input.customerId,
+          startTime,
+          notes: [
+            qualification.name
+              ? `Customer: ${qualification.name}`
+              : undefined,
+            qualification.serviceType
+              ? `Service: ${qualification.serviceType}`
+              : undefined,
+            qualification.location
+              ? `Location: ${qualification.location}`
+              : undefined,
+            qualification.urgency
+              ? `Urgency: ${qualification.urgency}`
+              : undefined,
+            `Requested time: ${qualification.preferredTime}`,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+        });
+
+      return {
+        success: true,
+        action: "BOOK_APPOINTMENT",
+        message: "Appointment booked successfully.",
+        data: appointment,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        action: "BOOK_APPOINTMENT",
+        message:
+          error instanceof Error
+            ? `Appointment booking failed: ${error.message}`
+            : "Appointment booking failed.",
+      };
+    }
+  }
+
+  private async sendSms(
+    input: EmployeeActionInput,
+  ): Promise<EmployeeActionResult> {
+    const qualification =
+      input.qualification ??
+      this.extractor.extract(input.content);
+
+    if (!qualification.phone) {
+      return {
+        success: false,
+        action: "SEND_SMS",
+        message:
+          "Cannot send confirmation SMS without a phone number.",
+      };
+    }
+
+    const customerName =
+      qualification.name
+        ? ` ${qualification.name}`
+        : "";
+
+    const service =
+      qualification.serviceType
+        ? ` for your ${qualification.serviceType}`
+        : "";
+
+    const requestedTime =
+      qualification.preferredTime
+        ? ` Requested time: ${qualification.preferredTime}.`
+        : "";
+
+    const message =
+      `Hi${customerName}! Your appointment${service} has been scheduled successfully.` +
+      requestedTime +
+      " Reply to this message if you need help.";
+
+    const smsResult =
+      await this.sms.send({
+        to: qualification.phone,
+        message,
+      });
+
+    if (!smsResult.success) {
+      return {
+        success: false,
+        action: "SEND_SMS",
+        message:
+          `Confirmation SMS failed: ${
+            smsResult.error ??
+            "Unknown Twilio error."
+          }`,
+        data: smsResult,
+      };
+    }
+
+    return {
+      success: true,
+      action: "SEND_SMS",
+      message:
+        "Confirmation SMS sent successfully.",
+      data: smsResult,
+    };
+  }
+
+  private async scheduleFollowUp(
+    input: EmployeeActionInput,
+  ): Promise<EmployeeActionResult> {
+    const qualification =
+      input.qualification ??
+      this.extractor.extract(
+        input.content,
+      );
+
+    const followUpResult =
+      await this.followUps.schedule({
+        customerId:
+          input.customerId,
+        businessId:
+          input.businessId,
+        phone:
+          qualification.phone,
+        customerName:
+          qualification.name,
+        serviceType:
+          qualification.serviceType,
+        reason:
+          "Follow up after appointment booking",
+      });
+
+    if (
+      !followUpResult.success ||
+      !followUpResult.record
+    ) {
+      return {
+        success: false,
+        action: "FOLLOW_UP",
+        message:
+          followUpResult.error ??
+          "Follow-up scheduling failed.",
+      };
+    }
+
+    return {
+      success: true,
+      action: "FOLLOW_UP",
+      message:
+        `Follow-up scheduled for ${followUpResult.record.scheduledFor}.`,
+      data:
+        followUpResult.record,
+    };
+  }
+
+  private resolveAppointmentTime(
+    preferredTime: string,
+  ): string | undefined {
+    const value =
+      preferredTime.trim().toLowerCase();
+
+    const date = new Date();
+
+    if (value.includes("tomorrow")) {
+      date.setDate(date.getDate() + 1);
+
+      if (value.includes("morning")) {
+        date.setHours(9, 0, 0, 0);
+      } else if (
+        value.includes("afternoon")
+      ) {
+        date.setHours(14, 0, 0, 0);
+      } else if (
+        value.includes("evening")
+      ) {
+        date.setHours(17, 0, 0, 0);
+      } else {
+        date.setHours(9, 0, 0, 0);
+      }
+
+      return date.toISOString();
+    }
+
+    return undefined;
+  }
+
   private processEstimateLead(
     input: EmployeeActionInput,
   ): EmployeeActionResult {
-    const memoryKey = this.getMemoryKey(input);
-    const incomingInformation = this.extractor.extract(input.content);
+    const memoryKey =
+      this.getMemoryKey(input);
 
-    const memoryRecord = this.leadMemory.merge(
-      memoryKey,
-      input.source,
-      incomingInformation,
-    );
+    const incomingInformation =
+      input.qualification ??
+      this.extractor.extract(
+        input.content,
+      );
 
-    const qualification = memoryRecord.qualification;
+    const memoryRecord =
+      this.leadMemory.merge(
+        memoryKey,
+        input.source,
+        incomingInformation,
+      );
 
-    const missingFields = requiredQualificationFields.filter(
-      (field) => !qualification[field],
-    );
+    const qualification =
+      memoryRecord.qualification;
 
-    const nextMissingField = missingFields[0];
-    const now = new Date().toISOString();
+    const missingFields =
+      requiredQualificationFields.filter(
+        field => !qualification[field],
+      );
+
+    const nextMissingField =
+      missingFields[0];
+
+    const now =
+      new Date().toISOString();
 
     const leadId =
-      this.leadIds.get(memoryKey) ?? crypto.randomUUID();
+      this.leadIds.get(memoryKey) ??
+      crypto.randomUUID();
 
     const createdAt =
-      this.leadCreatedAt.get(memoryKey) ?? now;
+      this.leadCreatedAt.get(memoryKey) ??
+      now;
 
-    this.leadIds.set(memoryKey, leadId);
-    this.leadCreatedAt.set(memoryKey, createdAt);
+    this.leadIds.set(
+      memoryKey,
+      leadId,
+    );
+
+    this.leadCreatedAt.set(
+      memoryKey,
+      createdAt,
+    );
 
     const summaries =
-      this.leadSummaries.get(memoryKey) ?? [];
+      this.leadSummaries.get(memoryKey) ??
+      [];
 
     if (input.content.trim()) {
-      summaries.push(input.content.trim());
+      summaries.push(
+        input.content.trim(),
+      );
     }
 
-    this.leadSummaries.set(memoryKey, summaries);
+    this.leadSummaries.set(
+      memoryKey,
+      summaries,
+    );
 
     const lead: EmployeeLeadRecord = {
       id: leadId,
@@ -198,14 +478,15 @@ export class EmployeeActions {
       summary: summaries.join(" "),
       qualification,
       missingFields,
-      nextQuestion: nextMissingField
-        ? qualificationQuestions[nextMissingField]
-        : undefined,
+      nextQuestion:
+        nextMissingField
+          ? qualificationQuestions[
+              nextMissingField
+            ]
+          : undefined,
       createdAt,
       updatedAt: now,
     };
-
-    console.log("Updated estimate lead:", lead);
 
     return {
       success: true,
@@ -222,7 +503,26 @@ export class EmployeeActions {
     input: EmployeeActionInput,
   ): boolean {
     return Boolean(
-      this.leadMemory.get(this.getMemoryKey(input)),
+      this.leadMemory.get(
+        this.getMemoryKey(input),
+      ),
+    );
+  }
+
+  private hasLeadQualification(
+    input: EmployeeActionInput,
+  ): boolean {
+    const qualification =
+      input.qualification ??
+      this.extractor.extract(
+        input.content,
+      );
+
+    return requiredQualificationFields.some(
+      field =>
+        qualification[field] !== undefined &&
+        qualification[field] !== null &&
+        qualification[field] !== "",
     );
   }
 

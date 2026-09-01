@@ -1,4 +1,5 @@
 import { supabase } from "@/app/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type OperatorIntent =
   | "analyze_lead"
@@ -115,11 +116,14 @@ function resolveOperator(memory: any) {
   return String(operator).trim() || "Unknown Operator";
 }
 
-export async function getOperatorPerformance(memoriesInput?: any[]) {
+export async function getOperatorPerformance(
+  memoriesInput?: any[],
+  db: SupabaseClient = supabase,
+) {
   let memories = memoriesInput || [];
 
   if (!memoriesInput) {
-    const { data } = await supabase
+    const { data } = await db
       .from("operator_memory")
       .select("*")
       .order("created_at", { ascending: false })
@@ -232,7 +236,9 @@ function buildMemoryContext(memories: any[]) {
     .join("\n");
 }
 
-export async function getSystemSnapshot() {
+export async function getSystemSnapshot(
+  db: SupabaseClient = supabase,
+) {
   const [
     { data: leads },
     { data: tasks },
@@ -240,15 +246,15 @@ export async function getSystemSnapshot() {
     { data: operatorMemory },
     { data: operationalEvents },
   ] = await Promise.all([
-    supabase.from("leads").select("*"),
-    supabase.from("tasks").select("*"),
-    supabase.from("company_memory").select("*"),
-    supabase
+    db.from("leads").select("*"),
+    db.from("tasks").select("*"),
+    db.from("company_memory").select("*"),
+    db
       .from("operator_memory")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(100),
-    supabase
+    db
       .from("operational_events")
       .select("*")
       .order("created_at", { ascending: false })
@@ -329,7 +335,7 @@ export async function getSystemSnapshot() {
     isFailure(normalizeStatus(memory.outcome))
   ).length;
 
-  const operatorPerformance = await getOperatorPerformance(safeOperatorMemory);
+  const operatorPerformance = await getOperatorPerformance(safeOperatorMemory, db);
 
   const pressure =
     highRiskLeads * 8 +
@@ -436,9 +442,10 @@ export function classifyOperatorIntent(message: string): OperatorIntent {
 }
 
 export async function makeOperatorDecision(
-  message: string
+  message: string,
+  db: SupabaseClient = supabase,
 ): Promise<OperatorDecision> {
-  const snapshot = await getSystemSnapshot();
+  const snapshot = await getSystemSnapshot(db);
   const intent = classifyOperatorIntent(message);
 
   const {
@@ -531,8 +538,8 @@ export async function createExecutionTask(input: {
   assignedAgent?: string;
   leadId?: number | null;
   source?: string;
-}) {
-  const { data, error } = await supabase
+}, db: SupabaseClient = supabase) {
+  const { data, error } = await db
     .from("tasks")
     .insert({
       lead_id: input.leadId || null,
@@ -552,7 +559,7 @@ export async function createExecutionTask(input: {
     throw new Error(error.message);
   }
 
-  await supabase.from("operational_events").insert({
+  await db.from("operational_events").insert({
     event_type: "task_created",
     title: input.title,
     description:
@@ -561,7 +568,7 @@ export async function createExecutionTask(input: {
     source: input.source || "operator_system",
   });
 
-  await supabase.from("operator_memory").insert({
+  await db.from("operator_memory").insert({
     memory_type: "task_creation",
     memory_category: "execution",
     title: input.title,
@@ -586,8 +593,10 @@ export async function createExecutionTask(input: {
   return data;
 }
 
-export async function runAutonomousScan() {
-  const snapshot = await getSystemSnapshot();
+export async function runAutonomousScan(
+  db: SupabaseClient = supabase,
+) {
+  const snapshot = await getSystemSnapshot(db);
   const { leads, metrics, memoryContext } = snapshot;
 
   const actions = [];
@@ -604,7 +613,7 @@ export async function runAutonomousScan() {
       urgency.includes("urgent");
 
     if (isHighRisk) {
-      const { data: existingTasks } = await supabase
+      const { data: existingTasks } = await db
         .from("tasks")
         .select("id")
         .eq("lead_id", lead.id)
@@ -631,7 +640,7 @@ Immediate follow-up recommended.`,
         priority: "high",
         assignedAgent: "Escalation Intelligence Layer",
         source: "autonomous_scan",
-      });
+      }, db);
 
       actions.push(task);
     }

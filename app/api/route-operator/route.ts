@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/app/lib/supabase";
+import { isAuthorizedInternalRequest } from "@/app/lib/internal-api-auth";
+import { supabaseServer as supabase } from "@/app/lib/supabase-server";
 import {
   AVAILABLE_OPERATORS,
   getOperatorPerformance,
@@ -33,6 +34,7 @@ async function getOutcomeIntelligence(leadId: number, lead: any) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.ZENNX_INTERNAL_API_SECRET || ""}`,
       },
       body: JSON.stringify({
         leadId,
@@ -175,6 +177,15 @@ function buildRoutePlan(input: {
 
 export async function POST(req: Request) {
   try {
+    if (!isAuthorizedInternalRequest(req)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 },
+      );
+    }
     const body = await req.json();
     const leadId = Number(body.leadId);
 

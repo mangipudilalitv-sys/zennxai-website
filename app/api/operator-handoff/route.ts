@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
-import { supabase } from "@/app/lib/supabase";
+import { isAuthorizedInternalRequest } from "@/app/lib/internal-api-auth";
+import { supabaseServer as supabase } from "@/app/lib/supabase-server";
 import {
   AVAILABLE_OPERATORS,
   getOperatorPerformance,
@@ -50,6 +51,15 @@ function fallbackHandoff(task: any, bestOperator?: string) {
 
 export async function POST(req: Request) {
   try {
+    if (!isAuthorizedInternalRequest(req)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 },
+      );
+    }
     const body = await req.json();
     const taskId = Number(body.taskId);
 

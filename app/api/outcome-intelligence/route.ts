@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/app/lib/supabase";
+import { isAuthorizedInternalRequest } from "@/app/lib/internal-api-auth";
+import { supabaseServer as supabase } from "@/app/lib/supabase-server";
 import { getOperatorPerformance } from "@/app/lib/operator-system";
 
 function normalize(value: unknown) {
@@ -138,6 +139,15 @@ function summarizeBestOperator(memories: any[]) {
 
 export async function POST(req: Request) {
   try {
+    if (!isAuthorizedInternalRequest(req)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 },
+      );
+    }
     const body = await req.json();
 
     const leadId = body.leadId ? Number(body.leadId) : null;
