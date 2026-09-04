@@ -21,7 +21,12 @@ import { LearningEngine } from "./learning-engine";
 import { BusinessBrain } from "./business-brain";
 
 import { CustomerService } from "@/lib/services/customer-service";
+import { ConversationService } from "@/lib/services/conversation-service";
 import { BusinessConfigurationService } from "@/lib/services/business-configuration-service";
+import {
+  LearningService,
+  type ActionLearningEvidence,
+} from "@/lib/services/learning-service";
 
 export class EmployeeRuntime {
   private readonly understanding =
@@ -32,6 +37,9 @@ export class EmployeeRuntime {
 
   private readonly customers =
     new CustomerService();
+
+  private readonly conversations =
+    new ConversationService();
 
   private readonly conversation =
     new ConversationStateEngine();
@@ -54,21 +62,14 @@ export class EmployeeRuntime {
   private readonly learning =
     new LearningEngine();
 
+  private readonly durableLearning =
+    new LearningService();
+
   private readonly business =
     new BusinessBrain();
 
   private readonly businessConfiguration =
     new BusinessConfigurationService();
-
-  /**
-   * Keeps the real Supabase customer UUID associated
-   * with the stable conversation/customer session ID.
-   *
-   * Example:
-   * customer_001 -> 21810206-8687-...
-   */
-  private readonly persistedCustomerIds =
-    new Map<string, string>();
 
   public async process(
     event: NormalizedEmployeeEvent,
@@ -91,16 +92,6 @@ export class EmployeeRuntime {
 
     //
     // STEP 3
-    // Establish stable conversation identity
-    //
-    // This ID must NEVER change between turns.
-    //
-    const conversationCustomerId =
-      normalized.customerId ??
-      "anonymous";
-
-    //
-    // STEP 4
     // Resolve business
     //
     const businessId =
@@ -108,12 +99,8 @@ export class EmployeeRuntime {
       process.env.DEFAULT_BUSINESS_ID;
 
     //
-    // STEP 5
-    // Load tenant-specific business configuration.
-    //
-    // ZennX remains one universal employee engine.
-    // Each business controls its own behavior,
-    // capabilities, policies and autonomy.
+    // STEP 4
+    // Load tenant-specific configuration
     //
     const businessConfiguration =
       businessId
@@ -123,8 +110,12 @@ export class EmployeeRuntime {
         : null;
 
     //
-    // STEP 6
-    // Resolve/persist real database customer
+    // STEP 5
+    // Resolve durable customer identity
+    //
+    // The database UUID is the source of truth whenever
+    // the incoming event contains enough customer identity
+    // information to resolve a customer.
     //
     let customer = null;
 
@@ -135,26 +126,38 @@ export class EmployeeRuntime {
           phone: extracted.phone,
           name: extracted.name,
         });
-
-      if (customer?.id) {
-        this.persistedCustomerIds.set(
-          conversationCustomerId,
-          customer.id,
-        );
-      }
     }
 
     const databaseCustomerId =
-      customer?.id ??
-      this.persistedCustomerIds.get(
-        conversationCustomerId,
-      );
+      customer?.id ?? null;
+
+    //
+    // Internal workflow engines still need a stable key
+    // for events where a durable customer cannot yet be
+    // resolved.
+    //
+    // Once the customer exists, use the durable UUID so
+    // runtime state and database state share one identity.
+    //
+    const conversationCustomerId =
+      databaseCustomerId ??
+      normalized.customerId ??
+      "anonymous";
 
     //
     // STEP 6
-    // Workflow
+    // Load durable conversation history
     //
-    // Always use stable conversation identity here.
+    const durableConversation =
+      databaseCustomerId
+        ? await this.conversations.getHistory(
+            databaseCustomerId,
+          )
+        : null;
+
+    //
+    // STEP 7
+    // Workflow
     //
     const workflow =
       this.workflow.update(
@@ -163,8 +166,8 @@ export class EmployeeRuntime {
       );
 
     //
-    // STEP 7
-    // Conversation
+    // STEP 8
+    // Conversation state
     //
     const conversation =
       this.conversation.syncWithWorkflow(
@@ -178,7 +181,7 @@ export class EmployeeRuntime {
       );
 
     //
-    // STEP 8
+    // STEP 9
     // Goal
     //
     const goal =
@@ -187,7 +190,7 @@ export class EmployeeRuntime {
       );
 
     //
-    // STEP 9
+    // STEP 10
     // Planning
     //
     const plan =
@@ -202,9 +205,34 @@ export class EmployeeRuntime {
       );
 
     //
-    // STEP 10
-    // Decision
+    // STEP 11
+    // Load business-scoped durable learning, then decide
     //
+    let actionLearning: Record<
+      string,
+      ActionLearningEvidence
+    > = {};
+
+    if (businessId) {
+      try {
+        actionLearning =
+          await this.durableLearning.getEvidenceForActions(
+            businessId,
+            [
+              "REQUEST_ESTIMATE",
+              "BOOK_APPOINTMENT",
+              "FOLLOW_UP",
+              "RESPOND",
+            ],
+          );
+      } catch (learningError) {
+        console.error(
+          "DURABLE LEARNING READ ERROR:",
+          learningError,
+        );
+      }
+    }
+
     const decision =
       this.brain.decide({
         message:
@@ -215,10 +243,15 @@ export class EmployeeRuntime {
           workflow.stage ===
           "READY_TO_BOOK",
         confidence: 100,
+        previousTranscript:
+          durableConversation?.transcript,
+        previousSummary:
+          durableConversation?.summary,
+        actionLearning,
       });
 
     //
-    // STEP 11
+    // STEP 12
     // Execute plan
     //
     let result: EmployeeActionResult | null =
@@ -226,20 +259,46 @@ export class EmployeeRuntime {
 
     for (const step of plan.steps) {
       //
-      // Conversation/qualification actions use the
-      // stable session identity.
-      //
-      // Database-backed appointment creation requires
-      // the real Supabase customer UUID.
+      // Appointment and follow-up persistence require
+      // a real database customer UUID.
       //
       const requiresDatabaseCustomer =
         step.action === "BOOK_APPOINTMENT" ||
         step.action === "FOLLOW_UP";
 
+      //
+      // Never pretend an ephemeral/session identifier is
+      // a database UUID for persistence-sensitive actions.
+      //
+      if (
+        requiresDatabaseCustomer &&
+        !databaseCustomerId
+      ) {
+        const stepResult: EmployeeActionResult = {
+          success: false,
+          action: step.action,
+          message:
+            "A durable customer identity is required before this action can execute.",
+        };
+
+        if (
+          result === null ||
+          step.action === decision.action
+        ) {
+          result = stepResult;
+        }
+
+        this.planner.completeStep(
+          conversationCustomerId,
+          step.id,
+        );
+
+        continue;
+      }
+
       const actionCustomerId =
         requiresDatabaseCustomer
-          ? databaseCustomerId ??
-            conversationCustomerId
+          ? databaseCustomerId!
           : conversationCustomerId;
 
       const permission =
@@ -251,7 +310,8 @@ export class EmployeeRuntime {
           : {
               allowed: false,
               requiresApproval: true,
-              reason: "Business could not be resolved.",
+              reason:
+                "Business could not be resolved.",
             };
 
       let stepResult: EmployeeActionResult;
@@ -264,7 +324,9 @@ export class EmployeeRuntime {
             permission.reason ??
             "Action is not allowed for this business.",
         };
-      } else if (permission.requiresApproval) {
+      } else if (
+        permission.requiresApproval
+      ) {
         stepResult = {
           success: false,
           action: step.action,
@@ -303,8 +365,8 @@ export class EmployeeRuntime {
     }
 
     //
-    // STEP 12
-    // Update conversation with employee action
+    // STEP 13
+    // Update runtime conversation state
     //
     if (result) {
       this.conversation.setEmployeeAction(
@@ -314,8 +376,32 @@ export class EmployeeRuntime {
     }
 
     //
-    // STEP 13
-    // Learning + Business Intelligence
+    // STEP 14
+    // Persist this interaction
+    //
+    // This is the durable history that survives process
+    // restarts and serverless instance replacement.
+    //
+    let persistedConversation =
+      durableConversation;
+
+    if (databaseCustomerId) {
+      persistedConversation =
+        await this.conversations.recordTurn({
+          customerId:
+            databaseCustomerId,
+          source:
+            normalized.source,
+          customerMessage:
+            normalized.content,
+          employeeMessage:
+            result?.message,
+        });
+    }
+
+    //
+    // STEP 15
+    // Learning + business intelligence
     //
     if (result) {
       this.learning.record({
@@ -333,14 +419,37 @@ export class EmployeeRuntime {
           result.message,
       });
 
+      if (businessId) {
+        try {
+          await this.durableLearning.record({
+            businessId,
+            customerId:
+              databaseCustomerId,
+            action:
+              decision.action,
+            outcome:
+              result.success
+                ? "success"
+                : "failed",
+            confidence:
+              decision.score,
+          });
+        } catch (learningError) {
+          console.error(
+            "DURABLE LEARNING WRITE ERROR:",
+            learningError,
+          );
+        }
+      }
+
       this.business.update(
         result,
       );
     }
 
     //
-    // STEP 14
-    // Return runtime context
+    // STEP 16
+    // Return complete runtime context
     //
     return {
       customer,
@@ -349,10 +458,18 @@ export class EmployeeRuntime {
       databaseCustomerId,
       normalized,
       extracted,
+
       conversation:
         this.conversation.getOrCreate(
           conversationCustomerId,
         ),
+
+      durableConversation:
+        persistedConversation,
+
+      previousConversation:
+        durableConversation,
+
       workflow,
       goal,
       plan,

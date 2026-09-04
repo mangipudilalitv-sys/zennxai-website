@@ -1,30 +1,30 @@
 import twilio from "twilio";
 
-import {
-  SmsConsentService,
-} from "@/lib/services/sms-consent-service";
-
-export interface SendSmsInput {
+export interface OwnerNotificationInput {
   businessId: string;
   to: string;
   message: string;
 }
 
-export interface SendSmsResult {
+export interface OwnerNotificationResult {
   success: boolean;
   sid?: string;
   status?: string;
-  blocked?: boolean;
   error?: string;
 }
 
-export class SmsExecutor {
-  private readonly consent =
-    new SmsConsentService();
-
+export class OwnerNotificationExecutor {
   public async send(
-    input: SendSmsInput,
-  ): Promise<SendSmsResult> {
+    input: OwnerNotificationInput,
+  ): Promise<OwnerNotificationResult> {
+    if (!input.businessId) {
+      return {
+        success: false,
+        error:
+          "Owner notification blocked because business identity is missing.",
+      };
+    }
+
     const accountSid =
       process.env.TWILIO_ACCOUNT_SID;
 
@@ -46,15 +46,6 @@ export class SmsExecutor {
       };
     }
 
-    if (!input.businessId) {
-      return {
-        success: false,
-        blocked: true,
-        error:
-          "SMS blocked because business identity is missing.",
-      };
-    }
-
     const to =
       this.normalizePhoneNumber(
         input.to,
@@ -64,27 +55,7 @@ export class SmsExecutor {
       return {
         success: false,
         error:
-          "Invalid destination phone number.",
-      };
-    }
-
-    /*
-     * Hard outbound boundary:
-     * every caller reaches this check before Twilio.
-     */
-    const allowed =
-      await this.consent.canSend(
-        input.businessId,
-        to,
-      );
-
-    if (!allowed) {
-      return {
-        success: false,
-        blocked: true,
-        status: "suppressed",
-        error:
-          "SMS blocked because the customer has opted out.",
+          "Invalid owner phone number.",
       };
     }
 
@@ -113,7 +84,7 @@ export class SmsExecutor {
         error:
           error instanceof Error
             ? error.message
-            : "SMS delivery failed.",
+            : "Owner notification delivery failed.",
       };
     }
   }

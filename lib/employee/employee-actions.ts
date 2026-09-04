@@ -7,6 +7,8 @@ import { LeadMemory } from "./lead-memory";
 import { AppointmentService } from "@/lib/services/appointment-service";
 import { SmsExecutor } from "@/lib/employee/execution/sms-executor";
 import { FollowUpExecutor } from "@/lib/employee/execution/followup-executor";
+import { TaskService } from "@/lib/services/task-service";
+import { BusinessCommunicationService } from "@/lib/services/business-communication-service";
 
 export type EmployeeAction =
   | "NO_ACTION"
@@ -94,6 +96,12 @@ export class EmployeeActions {
   private readonly followUps =
     new FollowUpExecutor();
 
+  private readonly tasks =
+    new TaskService();
+
+  private readonly communications =
+    new BusinessCommunicationService();
+
   private readonly leadIds =
     new Map<string, string>();
 
@@ -152,10 +160,7 @@ export class EmployeeActions {
         return this.scheduleFollowUp(input);
 
       case "ESCALATE_OWNER":
-        return this.createWorkflowResult(
-          action,
-          "Owner escalation workflow started.",
-        );
+        return this.escalateOwner(input);
 
       default:
         return {
@@ -163,6 +168,118 @@ export class EmployeeActions {
           action: "NO_ACTION",
           message: "No action required.",
         };
+    }
+  }
+
+  private async escalateOwner(
+    input: EmployeeActionInput,
+  ): Promise<EmployeeActionResult> {
+    if (!input.businessId) {
+      return {
+        success: false,
+        action: "ESCALATE_OWNER",
+        message:
+          "Cannot escalate without a business ID.",
+      };
+    }
+
+    const qualification =
+      input.qualification ??
+      this.extractor.extract(input.content);
+
+    const routing =
+      await this.communications.getByBusinessId(
+        input.businessId,
+      );
+
+    const summaryParts = [
+      qualification.name
+        ? `Customer: ${qualification.name}`
+        : undefined,
+      qualification.phone
+        ? `Phone: ${qualification.phone}`
+        : undefined,
+      qualification.serviceType
+        ? `Service: ${qualification.serviceType}`
+        : undefined,
+      qualification.location
+        ? `Location: ${qualification.location}`
+        : undefined,
+      qualification.urgency
+        ? `Urgency: ${qualification.urgency}`
+        : undefined,
+      `Request: ${input.content}`,
+    ].filter(Boolean);
+
+    const summary =
+      summaryParts.join(" | ");
+
+    try {
+      const task =
+        await this.tasks.create({
+          business_id:
+            input.businessId,
+          customer_id:
+            input.customerId,
+          status: "scheduled",
+          priority:
+            qualification.urgency === "high" ||
+            qualification.urgency === "critical"
+              ? "high"
+              : "normal",
+          description:
+            "Owner escalation required",
+          action_type:
+            "ESCALATE_OWNER",
+          payload: {
+            customerId:
+              input.customerId,
+            customerName:
+              qualification.name,
+            customerPhone:
+              qualification.phone,
+            serviceType:
+              qualification.serviceType,
+            location:
+              qualification.location,
+            urgency:
+              qualification.urgency,
+            source:
+              input.source,
+            request:
+              input.content,
+            summary,
+            ownerPhoneNumber:
+              routing?.ownerPhoneNumber,
+          },
+        });
+
+      return {
+        success: true,
+        action: "ESCALATE_OWNER",
+        message:
+          routing?.ownerPhoneNumber
+            ? "Owner escalation queued."
+            : "Owner escalation queued for manual handling because no owner phone number is configured.",
+        data: {
+          taskId: task.id,
+          status: task.status,
+          ownerPhoneConfigured:
+            Boolean(
+              routing?.ownerPhoneNumber,
+            ),
+          summary,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        action: "ESCALATE_OWNER",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Owner escalation failed.",
+      };
     }
   }
 
@@ -293,8 +410,18 @@ export class EmployeeActions {
       requestedTime +
       " Reply to this message if you need help.";
 
+    if (!input.businessId) {
+      return {
+        success: false,
+        action: "SEND_SMS",
+        message:
+          "Cannot send SMS without a business identity.",
+      };
+    }
+
     const smsResult =
       await this.sms.send({
+        businessId: input.businessId,
         to: qualification.phone,
         message,
       });

@@ -15,39 +15,35 @@ export class CustomerRepository extends BaseRepository {
   private readonly TABLE = "customers";
 
   public async findById(
+    businessId: string,
     id: string,
   ): Promise<CustomerRecord | null> {
     const { data, error } =
       await this.table(this.TABLE)
         .select("*")
+        .eq("business_id", businessId)
         .eq("id", id)
-        .single();
+        .maybeSingle();
 
     if (error) {
-      if (error.code === "PGRST116") {
-        return null;
-      }
-
       throw error;
     }
 
     return data;
   }
 
-  public async findByPhone(
+  public async findByBusinessAndPhone(
+    businessId: string,
     phone: string,
   ): Promise<CustomerRecord | null> {
     const { data, error } =
       await this.table(this.TABLE)
         .select("*")
+        .eq("business_id", businessId)
         .eq("phone", phone)
-        .single();
+        .maybeSingle();
 
     if (error) {
-      if (error.code === "PGRST116") {
-        return null;
-      }
-
       throw error;
     }
 
@@ -74,16 +70,19 @@ export class CustomerRepository extends BaseRepository {
   }
 
   public async update(
+    businessId: string,
     id: string,
-    updates: Partial<CustomerRecord>,
+    updates: Partial<
+      Omit<CustomerRecord, "id" | "business_id">
+    >,
   ): Promise<CustomerRecord> {
     const { data, error } =
       await this.table(this.TABLE)
         .update({
           ...updates,
-          updated_at:
-            new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
+        .eq("business_id", businessId)
         .eq("id", id)
         .select()
         .single();
@@ -96,11 +95,13 @@ export class CustomerRepository extends BaseRepository {
   }
 
   public async delete(
+    businessId: string,
     id: string,
   ): Promise<void> {
     const { error } =
       await this.table(this.TABLE)
         .delete()
+        .eq("business_id", businessId)
         .eq("id", id);
 
     if (error) {

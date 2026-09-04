@@ -1,5 +1,6 @@
 import { ConversationState } from "./conversation-state";
 import { EmployeeGoal } from "./goal-engine";
+import type { ActionLearningEvidence } from "@/lib/services/learning-service";
 
 export type EmployeeAction =
   | "NO_ACTION"
@@ -22,6 +23,17 @@ export interface DecisionContext {
   qualificationComplete: boolean;
 
   confidence: number;
+
+  previousTranscript?: string;
+
+  previousSummary?: string;
+
+  actionLearning?: Partial<
+    Record<
+      EmployeeAction,
+      ActionLearningEvidence
+    >
+  >;
 }
 
 export interface DecisionResult {
@@ -41,13 +53,66 @@ export class EmployeeBrain {
       this.scoreBooking(context),
       this.scoreFollowUp(context),
       this.scoreRespond(context),
-    ];
+    ].map((decision) =>
+      this.applyLearning(
+        decision,
+        context,
+      ),
+    );
 
     decisions.sort(
       (a, b) => b.score - a.score,
     );
 
     return decisions[0];
+  }
+
+  private applyLearning(
+    decision: DecisionResult,
+    context: DecisionContext,
+  ): DecisionResult {
+    const evidence =
+      context.actionLearning?.[
+        decision.action
+      ];
+
+    if (
+      !evidence ||
+      evidence.scoreAdjustment === 0
+    ) {
+      return decision;
+    }
+
+    const adjustment =
+      Math.max(
+        -10,
+        Math.min(
+          10,
+          evidence.scoreAdjustment,
+        ),
+      );
+
+    const sign =
+      adjustment > 0 ? "+" : "";
+
+    return {
+      ...decision,
+      score:
+        decision.score + adjustment,
+      reasoning: [
+        ...decision.reasoning,
+        `Durable learning adjusted ${decision.action} by ${sign}${adjustment} from ${evidence.executions} classified outcomes.`,
+      ],
+    };
+  }
+
+  private hasPreviousHistory(
+    context: DecisionContext,
+  ): boolean {
+    return Boolean(
+      context.previousTranscript?.trim() ||
+        context.previousSummary?.trim(),
+    );
   }
 
   private scoreEstimate(
@@ -65,6 +130,7 @@ export class EmployeeBrain {
       text.includes("quote")
     ) {
       score += 80;
+
       reasoning.push(
         "Customer requested pricing.",
       );
@@ -75,6 +141,7 @@ export class EmployeeBrain {
       "QUALIFY_LEAD"
     ) {
       score += 20;
+
       reasoning.push(
         "Continuing existing goal.",
       );
@@ -139,12 +206,24 @@ export class EmployeeBrain {
   private scoreRespond(
     context: DecisionContext,
   ): DecisionResult {
+    const reasoning = [
+      "Default conversational response.",
+    ];
+
+    let score = 10;
+
+    if (this.hasPreviousHistory(context)) {
+      score += 5;
+
+      reasoning.push(
+        "Previous customer history is available.",
+      );
+    }
+
     return {
       action: "RESPOND",
-      score: 10,
-      reasoning: [
-        "Default conversational response.",
-      ],
+      score,
+      reasoning,
     };
   }
 }

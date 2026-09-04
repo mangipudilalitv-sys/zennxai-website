@@ -9,7 +9,17 @@ async function main() {
 
   const sms = new SmsExecutor();
 
+  const businessId =
+    process.env.DEFAULT_BUSINESS_ID;
+
+  if (!businessId) {
+    throw new Error(
+      "Missing DEFAULT_BUSINESS_ID."
+    );
+  }
+
   const result = await sms.send({
+    businessId,
     to,
     message: "ZennX SMS test: if you received this, Twilio outbound messaging is working.",
   });

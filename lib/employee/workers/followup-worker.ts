@@ -58,11 +58,70 @@ export class FollowUpWorker {
               followUp.service_type,
           });
 
+        if (!followUp.business_id) {
+          await this.followUps.cancel(
+            followUp.id,
+          );
+
+          results.push({
+            id: followUp.id,
+            success: false,
+            status: "cancelled",
+            error:
+              "Follow-up has no business identity.",
+          });
+
+          continue;
+        }
+
         const smsResult =
           await this.sms.send({
+            businessId: followUp.business_id,
             to: followUp.phone,
             message,
           });
+
+        if (
+          !smsResult.success &&
+          (
+            smsResult.blocked === true ||
+            smsResult.status === "suppressed"
+          )
+        ) {
+          await this.followUps.cancel(
+            followUp.id,
+          );
+
+          try {
+            await this.learning.create({
+              business_id:
+                followUp.business_id,
+              customer_id:
+                followUp.customer_id,
+              action:
+                "FOLLOW_UP_SMS_SUPPRESSED",
+              outcome:
+                "cancelled",
+              confidence: 1,
+            });
+          } catch (learningError) {
+            console.error(
+              "FOLLOW-UP LEARNING ERROR:",
+              learningError,
+            );
+          }
+
+          results.push({
+            id: followUp.id,
+            success: false,
+            status: "cancelled",
+            error:
+              smsResult.error ??
+              "SMS suppressed.",
+          });
+
+          continue;
+        }
 
         if (!smsResult.success) {
           throw new Error(
@@ -77,6 +136,8 @@ export class FollowUpWorker {
 
         try {
           await this.learning.create({
+            business_id:
+              followUp.business_id,
             customer_id:
               followUp.customer_id,
             action:
@@ -115,21 +176,25 @@ export class FollowUpWorker {
             message,
           );
 
-          try {
-            await this.learning.create({
-              customer_id:
-                followUp.customer_id,
-              action:
-                "FOLLOW_UP_SMS_SENT",
-              outcome:
-                "failed",
-              confidence: 1,
-            });
-          } catch (learningError) {
-            console.error(
-              "FOLLOW-UP LEARNING ERROR:",
-              learningError,
-            );
+          if (followUp.business_id) {
+            try {
+              await this.learning.create({
+                business_id:
+                  followUp.business_id,
+                customer_id:
+                  followUp.customer_id,
+                action:
+                  "FOLLOW_UP_SMS_SENT",
+                outcome:
+                  "failed",
+                confidence: 1,
+              });
+            } catch (learningError) {
+              console.error(
+                "FOLLOW-UP LEARNING ERROR:",
+                learningError,
+              );
+            }
           }
 
           results.push({

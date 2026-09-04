@@ -51,7 +51,7 @@ create table leads (
 
     id uuid primary key default uuid_generate_v4(),
 
-    business_id uuid
+    business_id uuid not null
         references businesses(id),
 
     customer_id uuid
@@ -244,6 +244,9 @@ create table learning_events (
 
     id uuid primary key default uuid_generate_v4(),
 
+    business_id uuid
+        references businesses(id),
+
     customer_id uuid
         references customers(id),
 
@@ -256,6 +259,13 @@ create table learning_events (
     created_at timestamptz default now()
 
 );
+
+create index learning_events_business_action_created_idx
+    on learning_events (
+        business_id,
+        action,
+        created_at desc
+    );
 
 ---------------------------------------------------------
 -- BUSINESS HEALTH

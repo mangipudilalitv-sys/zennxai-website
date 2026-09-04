@@ -35,6 +35,24 @@ export class TaskWorker {
           );
 
         if (!execution.success) {
+          if (
+            execution.data?.terminal === true
+          ) {
+            await this.tasks.cancel(
+              task.id,
+              execution.message,
+            );
+
+            results.push({
+              id: task.id,
+              success: false,
+              status: "cancelled",
+              error: execution.message,
+            });
+
+            continue;
+          }
+
           throw new Error(
             execution.message,
           );

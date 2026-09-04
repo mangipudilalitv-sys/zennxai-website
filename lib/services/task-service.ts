@@ -77,4 +77,14 @@ export class TaskService {
       errorMessage,
     );
   }
+
+  public async cancel(
+    id: string,
+    reason: string,
+  ): Promise<TaskRecord> {
+    return this.repository.cancel(
+      id,
+      reason,
+    );
+  }
 }

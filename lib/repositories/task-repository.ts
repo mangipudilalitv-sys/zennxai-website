@@ -173,4 +173,15 @@ export class TaskRepository extends BaseRepository {
       next_attempt_at: null,
     });
   }
+
+  public async cancel(
+    id: string,
+    reason: string,
+  ): Promise<TaskRecord> {
+    return this.update(id, {
+      status: "cancelled",
+      error_message: reason,
+      next_attempt_at: null,
+    });
+  }
 }
