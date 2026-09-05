@@ -28,6 +28,16 @@ export class AppointmentService {
     });
   }
 
+  async getNextScheduledForCustomer(
+    businessId: string,
+    customerId: string,
+  ) {
+    return this.appointments.findNextScheduledForCustomer(
+      businessId,
+      customerId,
+    );
+  }
+
   async hasConflict(
     businessId: string,
     startTime: string,

@@ -25,6 +25,7 @@ export type WorkflowObjective =
   | "COLLECT_URGENCY"
   | "COLLECT_PREFERRED_TIME"
   | "BOOK_APPOINTMENT"
+  | "CANCEL_APPOINTMENT"
   | "FOLLOW_UP"
   | "CLOSE_SALE"
   | "NO_ACTION";
@@ -58,6 +59,7 @@ export class WorkflowEngine {
   public update(
     customerId: string,
     qualification: ExtractedLeadInformation,
+    requestedObjective?: WorkflowObjective,
   ): WorkflowState {
     const existing =
       this.states.get(customerId);
@@ -116,7 +118,10 @@ export class WorkflowEngine {
 
     let nextObjective: WorkflowObjective;
 
-    if (stage === "CLOSED") {
+    if (requestedObjective) {
+      nextObjective =
+        requestedObjective;
+    } else if (stage === "CLOSED") {
       nextObjective = "NO_ACTION";
     } else if (
       stage === "FOLLOW_UP" ||

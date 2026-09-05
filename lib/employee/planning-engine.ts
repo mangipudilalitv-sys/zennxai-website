@@ -214,6 +214,23 @@ export class PlanningEngine {
         ];
       }
 
+      case "CANCEL_APPOINTMENT":
+        return [
+          {
+            id:
+              crypto.randomUUID(),
+            title:
+              "Cancel Appointment",
+            description:
+              "Cancel the customer's next scheduled appointment.",
+            action:
+              "CANCEL_APPOINTMENT",
+            objective,
+            dependsOn: [],
+            status: "pending",
+          },
+        ];
+
       default:
         return [
           {

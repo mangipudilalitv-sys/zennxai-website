@@ -15,6 +15,9 @@ import {
 import type {
   BusinessHours,
 } from "./appointment-availability";
+import {
+  detectAppointmentLifecycleIntent,
+} from "./appointment-intent";
 
 import { ConversationStateEngine } from "./conversation-state";
 import { GoalEngine } from "./goal-engine";
@@ -90,6 +93,11 @@ export class EmployeeRuntime {
     //
     const extracted =
       this.extractor.extract(
+        normalized.content,
+      );
+
+    const appointmentIntent =
+      detectAppointmentLifecycleIntent(
         normalized.content,
       );
 
@@ -187,6 +195,10 @@ export class EmployeeRuntime {
       this.workflow.update(
         conversationCustomerId,
         extracted,
+        appointmentIntent ===
+          "CANCEL_APPOINTMENT"
+          ? "CANCEL_APPOINTMENT"
+          : undefined,
       );
 
     //
@@ -258,21 +270,31 @@ export class EmployeeRuntime {
     }
 
     const decision =
-      this.brain.decide({
-        message:
-          normalized.content,
-        conversation,
-        goal,
-        qualificationComplete:
-          workflow.stage ===
-          "READY_TO_BOOK",
-        confidence: 100,
-        previousTranscript:
-          durableConversation?.transcript,
-        previousSummary:
-          durableConversation?.summary,
-        actionLearning,
-      });
+      appointmentIntent ===
+      "CANCEL_APPOINTMENT"
+        ? {
+            action:
+              "CANCEL_APPOINTMENT" as const,
+            score: 100,
+            reasoning: [
+              "Customer requested appointment cancellation.",
+            ],
+          }
+        : this.brain.decide({
+            message:
+              normalized.content,
+            conversation,
+            goal,
+            qualificationComplete:
+              workflow.stage ===
+              "READY_TO_BOOK",
+            confidence: 100,
+            previousTranscript:
+              durableConversation?.transcript,
+            previousSummary:
+              durableConversation?.summary,
+            actionLearning,
+          });
 
     //
     // STEP 12

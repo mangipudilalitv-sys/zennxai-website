@@ -7,6 +7,7 @@ export type EmployeeAction =
   | "RESPOND"
   | "REQUEST_ESTIMATE"
   | "BOOK_APPOINTMENT"
+  | "CANCEL_APPOINTMENT"
   | "FOLLOW_UP"
   | "UPDATE_CRM"
   | "SEND_SMS"

@@ -62,6 +62,33 @@ export class AppointmentRepository extends BaseRepository {
     return data;
   }
 
+  async findNextScheduledForCustomer(
+    businessId: string,
+    customerId: string,
+  ) {
+    const { data, error } =
+      await this.table(this.TABLE)
+        .select("*")
+        .eq("business_id", businessId)
+        .eq("customer_id", customerId)
+        .eq("status", "scheduled")
+        .gte(
+          "end_time",
+          new Date().toISOString(),
+        )
+        .order("start_time", {
+          ascending: true,
+        })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  }
+
   async findOverlapping(
     businessId: string,
     startTime: string,

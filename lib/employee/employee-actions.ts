@@ -20,6 +20,7 @@ export type EmployeeAction =
   | "RESPOND"
   | "REQUEST_ESTIMATE"
   | "BOOK_APPOINTMENT"
+  | "CANCEL_APPOINTMENT"
   | "UPDATE_CRM"
   | "SEND_SMS"
   | "SEND_EMAIL"
@@ -147,6 +148,11 @@ export class EmployeeActions {
         return this.createWorkflowResult(
           action,
           "CRM update workflow started.",
+        );
+
+      case "CANCEL_APPOINTMENT":
+        return this.cancelAppointment(
+          input,
         );
 
       case "SEND_SMS":
@@ -491,6 +497,78 @@ export class EmployeeActions {
           error instanceof Error
             ? `Appointment booking failed: ${error.message}`
             : "Appointment booking failed.",
+      };
+    }
+  }
+
+  private async cancelAppointment(
+    input: EmployeeActionInput,
+  ): Promise<EmployeeActionResult> {
+    if (!input.businessId) {
+      return {
+        success: false,
+        action:
+          "CANCEL_APPOINTMENT",
+        message:
+          "Cannot cancel an appointment without a business ID.",
+      };
+    }
+
+    if (!input.customerId) {
+      return {
+        success: false,
+        action:
+          "CANCEL_APPOINTMENT",
+        message:
+          "Cannot cancel an appointment without a customer ID.",
+      };
+    }
+
+    try {
+      const appointment =
+        await this.appointments.getNextScheduledForCustomer(
+          input.businessId,
+          input.customerId,
+        );
+
+      if (!appointment) {
+        return {
+          success: false,
+          action:
+            "CANCEL_APPOINTMENT",
+          message:
+            "I could not find an upcoming appointment to cancel.",
+          data: {
+            reason:
+              "APPOINTMENT_NOT_FOUND",
+          },
+        };
+      }
+
+      const cancelled =
+        await this.appointments.cancel(
+          input.businessId,
+          appointment.id,
+        );
+
+      return {
+        success: true,
+        action:
+          "CANCEL_APPOINTMENT",
+        message:
+          "Your upcoming appointment has been cancelled.",
+        data:
+          cancelled,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        action:
+          "CANCEL_APPOINTMENT",
+        message:
+          error instanceof Error
+            ? `Appointment cancellation failed: ${error.message}`
+            : "Appointment cancellation failed.",
       };
     }
   }
