@@ -155,20 +155,44 @@ create table appointments (
 
     id uuid primary key default uuid_generate_v4(),
 
-    business_id uuid
+    business_id uuid not null
         references businesses(id),
 
-    customer_id uuid
+    customer_id uuid not null
         references customers(id),
 
-    start_time timestamptz,
+    start_time timestamptz not null,
 
-    end_time timestamptz,
+    end_time timestamptz not null,
 
-    status text,
+    status text not null
+        constraint appointments_valid_status_check
+        check (
+            status in (
+                'scheduled',
+                'cancelled',
+                'completed'
+            )
+        ),
 
-    notes text
+    notes text,
 
+    constraint appointments_valid_time_range_check
+        check (end_time > start_time)
+
+);
+
+create index appointments_business_start_idx
+on appointments (
+    business_id,
+    start_time
+);
+
+create index appointments_business_customer_start_idx
+on appointments (
+    business_id,
+    customer_id,
+    start_time desc
 );
 
 ---------------------------------------------------------

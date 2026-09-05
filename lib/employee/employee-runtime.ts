@@ -109,6 +109,22 @@ export class EmployeeRuntime {
           )
         : null;
 
+    const bookingRules =
+      businessConfiguration?.booking_rules ??
+      {};
+
+    const bookingTimezone =
+      typeof bookingRules.timezone ===
+      "string"
+        ? bookingRules.timezone
+        : undefined;
+
+    const appointmentDurationMinutes =
+      typeof bookingRules.default_duration_minutes ===
+      "number"
+        ? bookingRules.default_duration_minutes
+        : undefined;
+
     //
     // STEP 5
     // Resolve durable customer identity
@@ -347,6 +363,8 @@ export class EmployeeRuntime {
                 normalized.source,
               qualification:
                 workflow.qualification,
+              bookingTimezone,
+              appointmentDurationMinutes,
             },
           );
       }

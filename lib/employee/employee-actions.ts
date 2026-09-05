@@ -9,6 +9,7 @@ import { SmsExecutor } from "@/lib/employee/execution/sms-executor";
 import { FollowUpExecutor } from "@/lib/employee/execution/followup-executor";
 import { TaskService } from "@/lib/services/task-service";
 import { BusinessCommunicationService } from "@/lib/services/business-communication-service";
+import { parseBookingTime } from "./booking-time-parser";
 
 export type EmployeeAction =
   | "NO_ACTION"
@@ -28,6 +29,8 @@ export interface EmployeeActionInput {
   content: string;
   source: string;
   qualification?: ExtractedLeadInformation;
+  bookingTimezone?: string;
+  appointmentDurationMinutes?: number;
 }
 
 export type LeadQualificationField =
@@ -314,19 +317,36 @@ export class EmployeeActions {
       };
     }
 
-    const startTime =
-      this.resolveAppointmentTime(
-        qualification.preferredTime,
-      );
-
-    if (!startTime) {
+    if (!input.bookingTimezone) {
       return {
         success: false,
         action: "BOOK_APPOINTMENT",
         message:
-          "Preferred appointment time needs clarification before booking.",
+          "Business booking timezone is not configured.",
+      };
+    }
+
+    const bookingTime =
+      parseBookingTime({
+        preferredTime:
+          qualification.preferredTime,
+        timezone:
+          input.bookingTimezone,
+        durationMinutes:
+          input.appointmentDurationMinutes,
+      });
+
+    if (!bookingTime) {
+      return {
+        success: false,
+        action: "BOOK_APPOINTMENT",
+        message:
+          "Preferred appointment date or time needs clarification before booking.",
         data: {
-          preferredTime: qualification.preferredTime,
+          preferredTime:
+            qualification.preferredTime,
+          timezone:
+            input.bookingTimezone,
         },
       };
     }
@@ -336,7 +356,10 @@ export class EmployeeActions {
         await this.appointments.create({
           businessId: input.businessId,
           customerId: input.customerId,
-          startTime,
+          startTime:
+            bookingTime.startTime,
+          endTime:
+            bookingTime.endTime,
           notes: [
             qualification.name
               ? `Customer: ${qualification.name}`
@@ -351,6 +374,7 @@ export class EmployeeActions {
               ? `Urgency: ${qualification.urgency}`
               : undefined,
             `Requested time: ${qualification.preferredTime}`,
+            `Timezone: ${bookingTime.timezone}`,
           ]
             .filter(Boolean)
             .join(" | "),
@@ -494,37 +518,6 @@ export class EmployeeActions {
       data:
         followUpResult.record,
     };
-  }
-
-  private resolveAppointmentTime(
-    preferredTime: string,
-  ): string | undefined {
-    const value =
-      preferredTime.trim().toLowerCase();
-
-    const date = new Date();
-
-    if (value.includes("tomorrow")) {
-      date.setDate(date.getDate() + 1);
-
-      if (value.includes("morning")) {
-        date.setHours(9, 0, 0, 0);
-      } else if (
-        value.includes("afternoon")
-      ) {
-        date.setHours(14, 0, 0, 0);
-      } else if (
-        value.includes("evening")
-      ) {
-        date.setHours(17, 0, 0, 0);
-      } else {
-        date.setHours(9, 0, 0, 0);
-      }
-
-      return date.toISOString();
-    }
-
-    return undefined;
   }
 
   private processEstimateLead(

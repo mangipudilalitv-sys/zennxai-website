@@ -1,10 +1,13 @@
-import { AppointmentRepository } from "@/lib/repositories/appointment-repository";
+import {
+  AppointmentRepository,
+  UpdateAppointmentRecord,
+} from "@/lib/repositories/appointment-repository";
 
 export interface CreateAppointmentInput {
   businessId: string;
   customerId: string;
   startTime: string;
-  endTime?: string;
+  endTime: string;
   notes?: string;
 }
 
@@ -26,27 +29,33 @@ export class AppointmentService {
   }
 
   async getLatestForCustomer(
+    businessId: string,
     customerId: string,
   ) {
     return this.appointments.findByCustomerId(
+      businessId,
       customerId,
     );
   }
 
   async update(
+    businessId: string,
     appointmentId: string,
-    updates: Record<string, unknown>,
+    updates: UpdateAppointmentRecord,
   ) {
     return this.appointments.update(
+      businessId,
       appointmentId,
       updates,
     );
   }
 
   async cancel(
+    businessId: string,
     appointmentId: string,
   ) {
     return this.appointments.update(
+      businessId,
       appointmentId,
       {
         status: "cancelled",
@@ -55,9 +64,11 @@ export class AppointmentService {
   }
 
   async complete(
+    businessId: string,
     appointmentId: string,
   ) {
     return this.appointments.update(
+      businessId,
       appointmentId,
       {
         status: "completed",
