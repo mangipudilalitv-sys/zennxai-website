@@ -3,6 +3,7 @@
 -- =====================================================
 
 create extension if not exists "uuid-ossp";
+create extension if not exists btree_gist;
 
 ---------------------------------------------------------
 -- BUSINESSES
@@ -178,7 +179,18 @@ create table appointments (
     notes text,
 
     constraint appointments_valid_time_range_check
-        check (end_time > start_time)
+        check (end_time > start_time),
+
+    constraint appointments_no_scheduled_overlap
+        exclude using gist (
+            business_id with =,
+            tstzrange(
+                start_time,
+                end_time,
+                '[)'
+            ) with &&
+        )
+        where (status = 'scheduled')
 
 );
 

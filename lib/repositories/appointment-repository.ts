@@ -62,6 +62,28 @@ export class AppointmentRepository extends BaseRepository {
     return data;
   }
 
+  async findOverlapping(
+    businessId: string,
+    startTime: string,
+    endTime: string,
+  ) {
+    const { data, error } =
+      await this.table(this.TABLE)
+        .select("*")
+        .eq("business_id", businessId)
+        .eq("status", "scheduled")
+        .lt("start_time", endTime)
+        .gt("end_time", startTime)
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  }
+
   async update(
     businessId: string,
     id: string,

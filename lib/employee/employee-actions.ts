@@ -10,6 +10,10 @@ import { FollowUpExecutor } from "@/lib/employee/execution/followup-executor";
 import { TaskService } from "@/lib/services/task-service";
 import { BusinessCommunicationService } from "@/lib/services/business-communication-service";
 import { parseBookingTime } from "./booking-time-parser";
+import {
+  checkBusinessHours,
+  type BusinessHours,
+} from "./appointment-availability";
 
 export type EmployeeAction =
   | "NO_ACTION"
@@ -31,6 +35,7 @@ export interface EmployeeActionInput {
   qualification?: ExtractedLeadInformation;
   bookingTimezone?: string;
   appointmentDurationMinutes?: number;
+  businessHours?: BusinessHours;
 }
 
 export type LeadQualificationField =
@@ -351,7 +356,70 @@ export class EmployeeActions {
       };
     }
 
+    if (!input.businessHours) {
+      return {
+        success: false,
+        action: "BOOK_APPOINTMENT",
+        message:
+          "Business hours are not configured.",
+      };
+    }
+
+    const hoursAvailability =
+      checkBusinessHours(
+        bookingTime.startTime,
+        bookingTime.endTime,
+        bookingTime.timezone,
+        input.businessHours,
+      );
+
+    if (!hoursAvailability.available) {
+      return {
+        success: false,
+        action: "BOOK_APPOINTMENT",
+        message:
+          hoursAvailability.message ??
+          "The requested time is outside business hours.",
+        data: {
+          reason:
+            hoursAvailability.reason,
+          startTime:
+            bookingTime.startTime,
+          endTime:
+            bookingTime.endTime,
+          timezone:
+            bookingTime.timezone,
+        },
+      };
+    }
+
     try {
+      const hasConflict =
+        await this.appointments.hasConflict(
+          input.businessId,
+          bookingTime.startTime,
+          bookingTime.endTime,
+        );
+
+      if (hasConflict) {
+        return {
+          success: false,
+          action: "BOOK_APPOINTMENT",
+          message:
+            "That appointment time is already booked. Please choose another time.",
+          data: {
+            reason:
+              "APPOINTMENT_CONFLICT",
+            startTime:
+              bookingTime.startTime,
+            endTime:
+              bookingTime.endTime,
+            timezone:
+              bookingTime.timezone,
+          },
+        };
+      }
+
       const appointment =
         await this.appointments.create({
           businessId: input.businessId,
@@ -387,6 +455,35 @@ export class EmployeeActions {
         data: appointment,
       };
     } catch (error) {
+      const databaseError =
+        error as {
+          code?: string;
+          constraint?: string;
+        };
+
+      if (
+        databaseError.code === "23P01" ||
+        databaseError.constraint ===
+          "appointments_no_scheduled_overlap"
+      ) {
+        return {
+          success: false,
+          action: "BOOK_APPOINTMENT",
+          message:
+            "That appointment time was just booked. Please choose another time.",
+          data: {
+            reason:
+              "APPOINTMENT_CONFLICT",
+            startTime:
+              bookingTime.startTime,
+            endTime:
+              bookingTime.endTime,
+            timezone:
+              bookingTime.timezone,
+          },
+        };
+      }
+
       return {
         success: false,
         action: "BOOK_APPOINTMENT",

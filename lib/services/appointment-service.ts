@@ -28,6 +28,21 @@ export class AppointmentService {
     });
   }
 
+  async hasConflict(
+    businessId: string,
+    startTime: string,
+    endTime: string,
+  ): Promise<boolean> {
+    const overlapping =
+      await this.appointments.findOverlapping(
+        businessId,
+        startTime,
+        endTime,
+      );
+
+    return overlapping !== null;
+  }
+
   async getLatestForCustomer(
     businessId: string,
     customerId: string,

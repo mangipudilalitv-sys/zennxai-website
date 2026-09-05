@@ -12,6 +12,9 @@ import {
   EmployeeActions,
   type EmployeeActionResult,
 } from "./employee-actions";
+import type {
+  BusinessHours,
+} from "./appointment-availability";
 
 import { ConversationStateEngine } from "./conversation-state";
 import { GoalEngine } from "./goal-engine";
@@ -112,6 +115,11 @@ export class EmployeeRuntime {
     const bookingRules =
       businessConfiguration?.booking_rules ??
       {};
+
+    const businessHours =
+      businessConfiguration?.business_hours as
+        | BusinessHours
+        | undefined;
 
     const bookingTimezone =
       typeof bookingRules.timezone ===
@@ -365,6 +373,7 @@ export class EmployeeRuntime {
                 workflow.qualification,
               bookingTimezone,
               appointmentDurationMinutes,
+              businessHours,
             },
           );
       }
