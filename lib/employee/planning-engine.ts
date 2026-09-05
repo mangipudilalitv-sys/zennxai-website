@@ -231,6 +231,23 @@ export class PlanningEngine {
           },
         ];
 
+      case "RESCHEDULE_APPOINTMENT":
+        return [
+          {
+            id:
+              crypto.randomUUID(),
+            title:
+              "Reschedule Appointment",
+            description:
+              "Move the customer's next scheduled appointment.",
+            action:
+              "RESCHEDULE_APPOINTMENT",
+            objective,
+            dependsOn: [],
+            status: "pending",
+          },
+        ];
+
       default:
         return [
           {

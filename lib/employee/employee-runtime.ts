@@ -195,10 +195,7 @@ export class EmployeeRuntime {
       this.workflow.update(
         conversationCustomerId,
         extracted,
-        appointmentIntent ===
-          "CANCEL_APPOINTMENT"
-          ? "CANCEL_APPOINTMENT"
-          : undefined,
+        appointmentIntent,
       );
 
     //
@@ -270,14 +267,16 @@ export class EmployeeRuntime {
     }
 
     const decision =
-      appointmentIntent ===
-      "CANCEL_APPOINTMENT"
+      appointmentIntent
         ? {
             action:
-              "CANCEL_APPOINTMENT" as const,
+              appointmentIntent,
             score: 100,
             reasoning: [
-              "Customer requested appointment cancellation.",
+              appointmentIntent ===
+              "CANCEL_APPOINTMENT"
+                ? "Customer requested appointment cancellation."
+                : "Customer requested appointment rescheduling.",
             ],
           }
         : this.brain.decide({

@@ -42,12 +42,14 @@ export class AppointmentService {
     businessId: string,
     startTime: string,
     endTime: string,
+    excludeAppointmentId?: string,
   ): Promise<boolean> {
     const overlapping =
       await this.appointments.findOverlapping(
         businessId,
         startTime,
         endTime,
+        excludeAppointmentId,
       );
 
     return overlapping !== null;

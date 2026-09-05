@@ -93,14 +93,26 @@ export class AppointmentRepository extends BaseRepository {
     businessId: string,
     startTime: string,
     endTime: string,
+    excludeAppointmentId?: string,
   ) {
-    const { data, error } =
-      await this.table(this.TABLE)
+    let query =
+      this.table(this.TABLE)
         .select("*")
         .eq("business_id", businessId)
         .eq("status", "scheduled")
         .lt("start_time", endTime)
-        .gt("end_time", startTime)
+        .gt("end_time", startTime);
+
+    if (excludeAppointmentId) {
+      query =
+        query.neq(
+          "id",
+          excludeAppointmentId,
+        );
+    }
+
+    const { data, error } =
+      await query
         .limit(1)
         .maybeSingle();
 

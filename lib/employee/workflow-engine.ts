@@ -26,6 +26,7 @@ export type WorkflowObjective =
   | "COLLECT_PREFERRED_TIME"
   | "BOOK_APPOINTMENT"
   | "CANCEL_APPOINTMENT"
+  | "RESCHEDULE_APPOINTMENT"
   | "FOLLOW_UP"
   | "CLOSE_SALE"
   | "NO_ACTION";

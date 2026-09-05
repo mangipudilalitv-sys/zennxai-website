@@ -21,6 +21,7 @@ export type EmployeeAction =
   | "REQUEST_ESTIMATE"
   | "BOOK_APPOINTMENT"
   | "CANCEL_APPOINTMENT"
+  | "RESCHEDULE_APPOINTMENT"
   | "UPDATE_CRM"
   | "SEND_SMS"
   | "SEND_EMAIL"
@@ -152,6 +153,11 @@ export class EmployeeActions {
 
       case "CANCEL_APPOINTMENT":
         return this.cancelAppointment(
+          input,
+        );
+
+      case "RESCHEDULE_APPOINTMENT":
+        return this.rescheduleAppointment(
           input,
         );
 
@@ -497,6 +503,217 @@ export class EmployeeActions {
           error instanceof Error
             ? `Appointment booking failed: ${error.message}`
             : "Appointment booking failed.",
+      };
+    }
+  }
+
+  private async rescheduleAppointment(
+    input: EmployeeActionInput,
+  ): Promise<EmployeeActionResult> {
+    if (!input.businessId) {
+      return {
+        success: false,
+        action:
+          "RESCHEDULE_APPOINTMENT",
+        message:
+          "Cannot reschedule an appointment without a business ID.",
+      };
+    }
+
+    if (!input.customerId) {
+      return {
+        success: false,
+        action:
+          "RESCHEDULE_APPOINTMENT",
+        message:
+          "Cannot reschedule an appointment without a customer ID.",
+      };
+    }
+
+    if (!input.bookingTimezone) {
+      return {
+        success: false,
+        action:
+          "RESCHEDULE_APPOINTMENT",
+        message:
+          "Business booking timezone is not configured.",
+      };
+    }
+
+    const bookingTime =
+      parseBookingTime({
+        preferredTime:
+          input.content,
+        timezone:
+          input.bookingTimezone,
+        durationMinutes:
+          input.appointmentDurationMinutes,
+      });
+
+    if (!bookingTime) {
+      return {
+        success: false,
+        action:
+          "RESCHEDULE_APPOINTMENT",
+        message:
+          "Please provide both the new appointment date and time.",
+        data: {
+          reason:
+            "NEW_APPOINTMENT_TIME_REQUIRED",
+          timezone:
+            input.bookingTimezone,
+        },
+      };
+    }
+
+    if (!input.businessHours) {
+      return {
+        success: false,
+        action:
+          "RESCHEDULE_APPOINTMENT",
+        message:
+          "Business hours are not configured.",
+      };
+    }
+
+    const hoursAvailability =
+      checkBusinessHours(
+        bookingTime.startTime,
+        bookingTime.endTime,
+        bookingTime.timezone,
+        input.businessHours,
+      );
+
+    if (!hoursAvailability.available) {
+      return {
+        success: false,
+        action:
+          "RESCHEDULE_APPOINTMENT",
+        message:
+          hoursAvailability.message ??
+          "The requested time is outside business hours.",
+        data: {
+          reason:
+            hoursAvailability.reason,
+          startTime:
+            bookingTime.startTime,
+          endTime:
+            bookingTime.endTime,
+          timezone:
+            bookingTime.timezone,
+        },
+      };
+    }
+
+    try {
+      const appointment =
+        await this.appointments.getNextScheduledForCustomer(
+          input.businessId,
+          input.customerId,
+        );
+
+      if (!appointment) {
+        return {
+          success: false,
+          action:
+            "RESCHEDULE_APPOINTMENT",
+          message:
+            "I could not find an upcoming appointment to reschedule.",
+          data: {
+            reason:
+              "APPOINTMENT_NOT_FOUND",
+          },
+        };
+      }
+
+      const hasConflict =
+        await this.appointments.hasConflict(
+          input.businessId,
+          bookingTime.startTime,
+          bookingTime.endTime,
+          appointment.id,
+        );
+
+      if (hasConflict) {
+        return {
+          success: false,
+          action:
+            "RESCHEDULE_APPOINTMENT",
+          message:
+            "That appointment time is already booked. Please choose another time.",
+          data: {
+            reason:
+              "APPOINTMENT_CONFLICT",
+            startTime:
+              bookingTime.startTime,
+            endTime:
+              bookingTime.endTime,
+            timezone:
+              bookingTime.timezone,
+          },
+        };
+      }
+
+      const rescheduled =
+        await this.appointments.update(
+          input.businessId,
+          appointment.id,
+          {
+            start_time:
+              bookingTime.startTime,
+            end_time:
+              bookingTime.endTime,
+          },
+        );
+
+      return {
+        success: true,
+        action:
+          "RESCHEDULE_APPOINTMENT",
+        message:
+          "Your appointment has been rescheduled successfully.",
+        data:
+          rescheduled,
+      };
+    } catch (error) {
+      const databaseError =
+        error as {
+          code?: string;
+          constraint?: string;
+        };
+
+      if (
+        databaseError.code === "23P01" ||
+        databaseError.constraint ===
+          "appointments_no_scheduled_overlap"
+      ) {
+        return {
+          success: false,
+          action:
+            "RESCHEDULE_APPOINTMENT",
+          message:
+            "That appointment time was just booked. Please choose another time.",
+          data: {
+            reason:
+              "APPOINTMENT_CONFLICT",
+            startTime:
+              bookingTime.startTime,
+            endTime:
+              bookingTime.endTime,
+            timezone:
+              bookingTime.timezone,
+          },
+        };
+      }
+
+      return {
+        success: false,
+        action:
+          "RESCHEDULE_APPOINTMENT",
+        message:
+          error instanceof Error
+            ? `Appointment rescheduling failed: ${error.message}`
+            : "Appointment rescheduling failed.",
       };
     }
   }
