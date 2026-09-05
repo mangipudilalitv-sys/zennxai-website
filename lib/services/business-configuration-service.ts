@@ -82,9 +82,23 @@ export class BusinessConfigurationService {
       };
     }
 
+    /*
+     * Cancellation and rescheduling are lifecycle operations
+     * within the existing appointment-booking capability.
+     * This preserves compatibility with tenant configurations
+     * created before these action names were introduced.
+     */
+    const enabledCapability =
+      action === "CANCEL_APPOINTMENT" ||
+      action === "RESCHEDULE_APPOINTMENT"
+        ? "BOOK_APPOINTMENT"
+        : action;
+
     if (
       config.enabled_capabilities.length > 0 &&
-      !config.enabled_capabilities.includes(action)
+      !config.enabled_capabilities.includes(
+        enabledCapability,
+      )
     ) {
       return {
         allowed: false,
