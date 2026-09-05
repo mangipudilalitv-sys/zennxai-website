@@ -282,6 +282,20 @@ export class EmployeeRuntime {
       null;
 
     for (const step of plan.steps) {
+      if (
+        !this.planner.dependenciesCompleted(
+          conversationCustomerId,
+          step.id,
+        )
+      ) {
+        this.planner.blockStep(
+          conversationCustomerId,
+          step.id,
+        );
+
+        continue;
+      }
+
       //
       // Appointment and follow-up persistence require
       // a real database customer UUID.
@@ -312,7 +326,7 @@ export class EmployeeRuntime {
           result = stepResult;
         }
 
-        this.planner.completeStep(
+        this.planner.failStep(
           conversationCustomerId,
           step.id,
         );
@@ -385,10 +399,17 @@ export class EmployeeRuntime {
         result = stepResult;
       }
 
-      this.planner.completeStep(
-        conversationCustomerId,
-        step.id,
-      );
+      if (stepResult.success) {
+        this.planner.completeStep(
+          conversationCustomerId,
+          step.id,
+        );
+      } else {
+        this.planner.failStep(
+          conversationCustomerId,
+          step.id,
+        );
+      }
     }
 
     //
