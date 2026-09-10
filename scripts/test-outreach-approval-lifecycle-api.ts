@@ -116,7 +116,7 @@ async function main() {
     const draft =
       await service.createDraft({
         business_id: businessId,
-        contact_id: contactId,
+        contact_id: contactId!,
         channel: "email",
         body:
           "This is an automated ZennX outreach approval lifecycle test.",

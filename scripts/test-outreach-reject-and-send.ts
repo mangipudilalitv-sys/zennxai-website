@@ -55,7 +55,7 @@ async function main() {
     const rejectDraft =
       await service.createDraft({
         business_id: businessId,
-        contact_id: contactId,
+        contact_id: contactId!,
         channel: "email",
         body:
           "This message should be rejected.",
@@ -106,7 +106,7 @@ async function main() {
     const sendDraft =
       await service.createDraft({
         business_id: businessId,
-        contact_id: contactId,
+        contact_id: contactId!,
         channel: "email",
         body:
           "This message should be approved and marked sent.",
