@@ -56,8 +56,8 @@ async function readJson(
 }
 
 async function main() {
-  let contactId: string | undefined;
-  let messageId: string | undefined;
+  let contactId = "";
+  let messageId = "";
 
   try {
     console.log(

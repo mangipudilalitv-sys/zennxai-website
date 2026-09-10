@@ -24,9 +24,9 @@ const service =
   new OutreachService(repository);
 
 async function main() {
-  let contactId: string | undefined;
-  let rejectedId: string | undefined;
-  let approvedId: string | undefined;
+  let contactId = "";
+  let rejectedId = "";
+  let approvedId = "";
 
   try {
     const contact =
