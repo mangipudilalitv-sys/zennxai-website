@@ -10,6 +10,7 @@ export default function DashboardLayout({
     ["⌖", "Command Core", "/dashboard"],
     ["♙", "Lead Network", "/dashboard/leads"],
     ["⇱", "AI Tasks", "/dashboard/tasks"],
+    ["✦", "Outreach", "/dashboard/outreach"],
     ["◇", "Company Memory", "/dashboard/memory"],
     ["⌁", "Health Monitor", "/dashboard/health"],
     ["⟳", "Autonomous Loop", "/dashboard/autonomous"],
