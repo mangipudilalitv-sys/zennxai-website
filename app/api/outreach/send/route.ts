@@ -4,6 +4,7 @@ import {
   isAuthorizedInternalRequest,
   resolveAuthorizedBusinessId,
 } from "@/app/lib/internal-api-auth";
+import { checkRateLimit } from "@/app/lib/simple-rate-limit";
 import {
   supabaseServer,
 } from "@/app/lib/supabase-server";
@@ -78,6 +79,44 @@ export async function POST(
         },
         {
           status: 400,
+        },
+      );
+    }
+
+    const rateLimit =
+      checkRateLimit(
+        `outreach:send:${businessId}`,
+        10,
+        60_000,
+      );
+
+    if (!rateLimit.allowed) {
+      const retryAfterSeconds =
+        Math.max(
+          Math.ceil(
+            (
+              rateLimit.resetAt -
+              Date.now()
+            ) / 1000,
+          ),
+          1,
+        );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Too many outreach send requests",
+          retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After":
+              String(
+                retryAfterSeconds,
+              ),
+          },
         },
       );
     }

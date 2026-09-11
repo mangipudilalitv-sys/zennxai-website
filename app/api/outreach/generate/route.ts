@@ -5,6 +5,7 @@ import {
   isAuthorizedInternalRequest,
   resolveAuthorizedBusinessId,
 } from "@/app/lib/internal-api-auth";
+import { checkRateLimit } from "@/app/lib/simple-rate-limit";
 import { supabaseServer } from "@/app/lib/supabase-server";
 import { OutreachService } from "@/lib/services/outreach-service";
 
@@ -79,6 +80,44 @@ export async function POST(
         },
         {
           status: 400,
+        },
+      );
+    }
+
+    const rateLimit =
+      checkRateLimit(
+        `outreach:generate:${businessId}`,
+        20,
+        60_000,
+      );
+
+    if (!rateLimit.allowed) {
+      const retryAfterSeconds =
+        Math.max(
+          Math.ceil(
+            (
+              rateLimit.resetAt -
+              Date.now()
+            ) / 1000,
+          ),
+          1,
+        );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Too many outreach generation requests",
+          retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After":
+              String(
+                retryAfterSeconds,
+              ),
+          },
         },
       );
     }
