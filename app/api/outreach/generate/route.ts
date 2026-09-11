@@ -150,6 +150,10 @@ Requirements:
 - Do not invent achievements, pain points, revenue loss, or personal facts.
 - Do not sound like a mass email.
 - End with a low-friction call to action.
+- Sign email outreach with exactly:
+  Best,
+  Lalit
+- Never use placeholders like [Your Name], [Name], or similar.
               `.trim(),
             },
           ],
