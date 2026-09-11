@@ -12,6 +12,17 @@ const openai = new OpenAI({
 const outreachService =
   new OutreachService();
 
+const ALLOWED_OBJECTIVES = new Set([
+  "SELL",
+  "NETWORK",
+  "COLLABORATE",
+  "PARTNERSHIP",
+  "INVESTOR",
+  "REFERRAL",
+]);
+
+const MAX_INSTRUCTIONS_LENGTH = 1200;
+
 export async function POST(
   req: Request,
 ) {
@@ -48,7 +59,9 @@ export async function POST(
     const objective =
       String(
         body.objective || "SELL",
-      ).trim();
+      )
+        .trim()
+        .toUpperCase();
 
     const instructions =
       String(
@@ -74,6 +87,34 @@ export async function POST(
           success: false,
           error:
             "contactId is required",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (!ALLOWED_OBJECTIVES.has(objective)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid outreach objective",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      instructions.length >
+      MAX_INSTRUCTIONS_LENGTH
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "instructions must be 1200 characters or fewer",
         },
         {
           status: 400,
