@@ -84,7 +84,7 @@ export async function POST(
     }
 
     const rateLimit =
-      checkRateLimit(
+      await checkRateLimit(
         `outreach:send:${businessId}`,
         10,
         60_000,
@@ -93,12 +93,7 @@ export async function POST(
     if (!rateLimit.allowed) {
       const retryAfterSeconds =
         Math.max(
-          Math.ceil(
-            (
-              rateLimit.resetAt -
-              Date.now()
-            ) / 1000,
-          ),
+          rateLimit.retryAfterSeconds,
           1,
         );
 

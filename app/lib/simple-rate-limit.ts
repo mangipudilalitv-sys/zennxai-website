@@ -1,57 +1,61 @@
-type RateLimitBucket = {
-  count: number;
-  resetAt: number;
+import { supabaseServer } from "@/app/lib/supabase-server";
+
+type RateLimitRow = {
+  allowed: boolean;
+  remaining: number;
+  retry_after_seconds: number;
 };
 
-const buckets = new Map<string, RateLimitBucket>();
-
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   limit: number,
   windowMs: number,
 ) {
-  const now = Date.now();
-  const existing = buckets.get(key);
+  const windowSeconds =
+    Math.max(
+      1,
+      Math.ceil(windowMs / 1000),
+    );
 
-  if (
-    !existing ||
-    existing.resetAt <= now
-  ) {
-    const resetAt =
-      now + windowMs;
+  const { data, error } =
+    await supabaseServer.rpc(
+      "check_api_rate_limit",
+      {
+        p_key: key,
+        p_limit: limit,
+        p_window_seconds:
+          windowSeconds,
+      },
+    );
 
-    buckets.set(key, {
-      count: 1,
-      resetAt,
-    });
-
-    return {
-      allowed: true,
-      remaining:
-        Math.max(limit - 1, 0),
-      resetAt,
-    };
+  if (error) {
+    throw error;
   }
 
-  if (existing.count >= limit) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetAt:
-        existing.resetAt,
-    };
-  }
+  const row =
+    (
+      Array.isArray(data)
+        ? data[0]
+        : data
+    ) as RateLimitRow | undefined;
 
-  existing.count += 1;
+  if (!row) {
+    throw new Error(
+      "Rate limit RPC returned no result.",
+    );
+  }
 
   return {
-    allowed: true,
+    allowed:
+      Boolean(row.allowed),
     remaining:
+      Number(row.remaining || 0),
+    retryAfterSeconds:
       Math.max(
-        limit - existing.count,
+        Number(
+          row.retry_after_seconds || 0,
+        ),
         0,
       ),
-    resetAt:
-      existing.resetAt,
   };
 }
