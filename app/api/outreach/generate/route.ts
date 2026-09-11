@@ -299,28 +299,66 @@ Requirements:
       );
     }
 
-    const message =
-      await outreachService
-        .createDraft({
-          business_id:
-            businessId,
-          contact_id:
-            contact.id,
-          channel,
-          body:
-            generatedBody,
-          personalization_context:
-            {
-              objective,
-              instructions:
-                instructions ||
-                undefined,
-              generated_by:
-                "zennx-ai",
-            },
-          requires_approval:
-            true,
-        });
+    let message;
+
+    try {
+      message =
+        await outreachService
+          .createDraft({
+            business_id:
+              businessId,
+            contact_id:
+              contact.id,
+            channel,
+            body:
+              generatedBody,
+            personalization_context:
+              {
+                objective,
+                instructions:
+                  instructions ||
+                  undefined,
+                generated_by:
+                  "zennx-ai",
+              },
+            requires_approval:
+              true,
+          });
+    } catch (error) {
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error
+          ? String(
+              (error as { code?: unknown })
+                .code || "",
+            )
+          : "";
+
+      if (errorCode === "23505") {
+        const pendingDraft =
+          await outreachService
+            .findPendingDraftForContact(
+              businessId,
+              contact.id,
+            );
+
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "A pending outreach draft already exists for this contact",
+            messageId:
+              pendingDraft?.id,
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      throw error;
+    }
 
     return NextResponse.json({
       success: true,
