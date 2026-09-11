@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   isAuthorizedInternalRequest,
+  resolveAuthorizedBusinessId,
 } from "@/app/lib/internal-api-auth";
 import {
   supabaseServer,
@@ -59,12 +60,9 @@ export async function POST(
       await request.json();
 
     const businessId =
-      String(
-        body.businessId ||
-          process.env
-            .DEFAULT_BUSINESS_ID ||
-          "",
-      ).trim();
+      resolveAuthorizedBusinessId(
+        body.businessId,
+      ) || "";
 
     const messageId =
       String(

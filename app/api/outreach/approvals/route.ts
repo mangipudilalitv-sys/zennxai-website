@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   isAuthorizedInternalRequest,
+  resolveAuthorizedBusinessId,
 } from "@/app/lib/internal-api-auth";
 import {
   OutreachRepository,
@@ -19,27 +20,21 @@ function resolveBusinessId(
   request: Request,
   suppliedBusinessId?: unknown,
 ) {
-  const supplied =
-    String(suppliedBusinessId || "").trim();
-
-  if (supplied) {
-    return supplied;
-  }
+  const supplied = String(
+    suppliedBusinessId || "",
+  ).trim();
 
   const url = new URL(request.url);
 
-  const queryBusinessId =
-    String(
-      url.searchParams.get("businessId") || "",
-    ).trim();
-
-  if (queryBusinessId) {
-    return queryBusinessId;
-  }
-
-  return String(
-    process.env.DEFAULT_BUSINESS_ID || "",
+  const queryBusinessId = String(
+    url.searchParams.get("businessId") || "",
   ).trim();
+
+  return (
+    resolveAuthorizedBusinessId(
+      supplied || queryBusinessId,
+    ) || ""
+  );
 }
 
 export async function GET(request: Request) {

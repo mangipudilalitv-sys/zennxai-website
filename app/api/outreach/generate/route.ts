@@ -1,7 +1,10 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-import { isAuthorizedInternalRequest } from "@/app/lib/internal-api-auth";
+import {
+  isAuthorizedInternalRequest,
+  resolveAuthorizedBusinessId,
+} from "@/app/lib/internal-api-auth";
 import { supabaseServer } from "@/app/lib/supabase-server";
 import { OutreachService } from "@/lib/services/outreach-service";
 
@@ -46,11 +49,9 @@ export async function POST(
       await req.json();
 
     const businessId =
-      String(
-        body.businessId ||
-          process.env.DEFAULT_BUSINESS_ID ||
-          "",
-      ).trim();
+      resolveAuthorizedBusinessId(
+        body.businessId,
+      ) || "";
 
     const contactId =
       String(

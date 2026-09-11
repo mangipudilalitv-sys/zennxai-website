@@ -33,3 +33,28 @@ export function isAuthorizedInternalRequest(
     `Bearer ${secret}`,
   );
 }
+
+export function resolveAuthorizedBusinessId(
+  suppliedBusinessId?: unknown,
+) {
+  const configuredBusinessId = String(
+    process.env.DEFAULT_BUSINESS_ID || "",
+  ).trim();
+
+  if (!configuredBusinessId) {
+    return null;
+  }
+
+  const supplied = String(
+    suppliedBusinessId || "",
+  ).trim();
+
+  if (
+    supplied &&
+    supplied !== configuredBusinessId
+  ) {
+    return null;
+  }
+
+  return configuredBusinessId;
+}
