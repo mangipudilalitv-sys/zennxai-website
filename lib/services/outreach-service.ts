@@ -51,6 +51,77 @@ export class OutreachService {
     });
   }
 
+  async createGenerationReservation(
+    input: Omit<
+      CreateOutreachMessageRecord,
+      "status" | "body"
+    >,
+  ) {
+    return this.outreach.createMessage({
+      ...input,
+      body: "__generation_reserved__",
+      status: "draft",
+      requires_approval: true,
+    });
+  }
+
+  async failGenerationReservation(
+    businessId: string,
+    messageId: string,
+    errorMessage: string,
+  ) {
+    const message =
+      await this.requireMessage(
+        businessId,
+        messageId,
+      );
+
+    if (message.status !== "draft") {
+      return message;
+    }
+
+    return this.outreach.updateMessage(
+      businessId,
+      messageId,
+      {
+        status: "failed",
+        error_message:
+          errorMessage.trim().slice(0, 1000) ||
+          "Outreach generation failed",
+      },
+    );
+  }
+
+  async finalizeGenerationReservation(
+    businessId: string,
+    messageId: string,
+    body: string,
+    personalizationContext:
+      Record<string, unknown>,
+  ) {
+    const normalizedBody =
+      body.trim();
+
+    if (!normalizedBody) {
+      throw new Error(
+        "Outreach draft body cannot be empty.",
+      );
+    }
+
+    return this.outreach.updateMessage(
+      businessId,
+      messageId,
+      {
+        body: normalizedBody,
+        personalization_context:
+          personalizationContext,
+        status:
+          "pending_approval",
+        requires_approval: true,
+      },
+    );
+  }
+
   async findPendingDraftForContact(
     businessId: string,
     contactId: string,
