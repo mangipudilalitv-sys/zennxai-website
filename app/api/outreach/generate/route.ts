@@ -22,6 +22,7 @@ const ALLOWED_OBJECTIVES = new Set([
 ]);
 
 const MAX_INSTRUCTIONS_LENGTH = 1200;
+const MAX_GENERATED_BODY_LENGTH = 3000;
 
 export async function POST(
   req: Request,
@@ -200,6 +201,7 @@ export async function POST(
         {
           model:
             "gpt-4.1-mini",
+          max_tokens: 600,
           messages: [
             {
               role: "system",
@@ -254,6 +256,22 @@ Requirements:
           success: false,
           error:
             "AI returned an empty outreach message",
+        },
+        {
+          status: 502,
+        },
+      );
+    }
+
+    if (
+      generatedBody.length >
+      MAX_GENERATED_BODY_LENGTH
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "AI returned an outreach message that was too long",
         },
         {
           status: 502,
