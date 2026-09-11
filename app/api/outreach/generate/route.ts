@@ -160,6 +160,25 @@ export async function POST(
       );
     }
 
+    const channel = String(
+      contact.platform || "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (channel !== "email") {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Only email outreach generation is currently supported",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
     const existingPendingDraft =
       await outreachService.findPendingDraftForContact(
         businessId,
@@ -287,8 +306,7 @@ Requirements:
             businessId,
           contact_id:
             contact.id,
-          channel:
-            contact.platform,
+          channel,
           body:
             generatedBody,
           personalization_context:
