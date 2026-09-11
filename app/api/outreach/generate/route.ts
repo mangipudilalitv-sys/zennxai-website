@@ -128,7 +128,9 @@ export async function POST(
     } =
       await supabaseServer
         .from("outreach_contacts")
-        .select("*")
+        .select(
+          "id, display_name, organization_name, platform, handle, profile_url, location, bio, audience_size, tags, personalization",
+        )
         .eq(
           "business_id",
           businessId,
@@ -177,6 +179,22 @@ export async function POST(
       );
     }
 
+    const contactContext = {
+      display_name: contact.display_name,
+      organization_name:
+        contact.organization_name,
+      platform: contact.platform,
+      handle: contact.handle,
+      profile_url: contact.profile_url,
+      location: contact.location,
+      bio: contact.bio,
+      audience_size:
+        contact.audience_size,
+      tags: contact.tags,
+      personalization:
+        contact.personalization,
+    };
+
     const completion =
       await openai.chat.completions.create(
         {
@@ -197,7 +215,7 @@ Objective:
 ${objective}
 
 Contact:
-${JSON.stringify(contact)}
+${JSON.stringify(contactContext)}
 
 Additional instructions:
 ${
