@@ -31,6 +31,27 @@ const MAX_GENERATED_BODY_LENGTH = 3000;
 const STALE_GENERATION_RESERVATION_MS =
   10 * 60 * 1000;
 
+
+async function failGenerationReservationBestEffort(
+  businessId: string,
+  messageId: string,
+  errorMessage: string,
+) {
+  try {
+    await outreachService
+      .failGenerationReservation(
+        businessId,
+        messageId,
+        errorMessage,
+      );
+  } catch (cleanupError) {
+    console.error(
+      "OUTREACH RESERVATION CLEANUP ERROR:",
+      cleanupError,
+    );
+  }
+}
+
 export async function POST(
   req: Request,
 ) {
@@ -433,14 +454,13 @@ Requirements:
           },
         );
     } catch (error) {
-      await outreachService
-        .failGenerationReservation(
-          businessId,
-          reservation.id,
-          error instanceof Error
-            ? error.message
-            : "Outreach generation failed",
-        );
+      await failGenerationReservationBestEffort(
+        businessId,
+        reservation.id,
+        error instanceof Error
+          ? error.message
+          : "Outreach generation failed",
+      );
 
       throw error;
     }
@@ -454,12 +474,11 @@ Requirements:
       ).trim();
 
     if (!generatedBody) {
-      await outreachService
-        .failGenerationReservation(
-          businessId,
-          reservation.id,
-          "AI returned an empty outreach message",
-        );
+      await failGenerationReservationBestEffort(
+        businessId,
+        reservation.id,
+        "AI returned an empty outreach message",
+      );
 
       return NextResponse.json(
         {
@@ -477,12 +496,11 @@ Requirements:
       generatedBody.length >
       MAX_GENERATED_BODY_LENGTH
     ) {
-      await outreachService
-        .failGenerationReservation(
-          businessId,
-          reservation.id,
-          "AI returned an outreach message that was too long",
-        );
+      await failGenerationReservationBestEffort(
+        businessId,
+        reservation.id,
+        "AI returned an outreach message that was too long",
+      );
 
       return NextResponse.json(
         {
@@ -508,14 +526,13 @@ Requirements:
             personalizationContext,
           );
     } catch (error) {
-      await outreachService
-        .failGenerationReservation(
-          businessId,
-          reservation.id,
-          error instanceof Error
-            ? error.message
-            : "Outreach generation finalization failed",
-        );
+      await failGenerationReservationBestEffort(
+        businessId,
+        reservation.id,
+        error instanceof Error
+          ? error.message
+          : "Outreach generation finalization failed",
+      );
 
       throw error;
     }
