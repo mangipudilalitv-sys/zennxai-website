@@ -254,28 +254,40 @@ export async function POST(
       );
     }
 
-    const providerResponse =
-      await fetch(
-        "https://api.resend.com/emails",
-        {
-          method: "POST",
-          headers: {
-            Authorization:
-              `Bearer ${resendApiKey}`,
-            "Content-Type":
-              "application/json",
-            "Idempotency-Key":
-              `outreach/${message.id}`,
+    let providerResponse: Response;
+
+    try {
+      providerResponse =
+        await fetch(
+          "https://api.resend.com/emails",
+          {
+            method: "POST",
+            headers: {
+              Authorization:
+                `Bearer ${resendApiKey}`,
+              "Content-Type":
+                "application/json",
+              "Idempotency-Key":
+                `outreach/${message.id}`,
+            },
+            body: JSON.stringify({
+              from: fromEmail,
+              to: [recipient],
+              subject:
+                "Quick question from ZennX",
+              text: message.body,
+            }),
           },
-          body: JSON.stringify({
-            from: fromEmail,
-            to: [recipient],
-            subject:
-              "Quick question from ZennX",
-            text: message.body,
-          }),
-        },
+        );
+    } catch (error) {
+      await outreachService.markFailed(
+        businessId,
+        messageId,
+        "Email provider request failed",
       );
+
+      throw error;
+    }
 
     const providerData =
       await providerResponse.json()
@@ -285,6 +297,12 @@ export async function POST(
       console.error(
         "OUTREACH EMAIL PROVIDER ERROR:",
         providerData,
+      );
+
+      await outreachService.markFailed(
+        businessId,
+        messageId,
+        `Email provider rejected delivery with status ${providerResponse.status}`,
       );
 
       return NextResponse.json(
@@ -307,8 +325,21 @@ export async function POST(
       ).trim();
 
     if (!providerMessageId) {
-      throw new Error(
+      await outreachService.markFailed(
+        businessId,
+        messageId,
         "Email provider returned no message id",
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Email provider returned no message id",
+        },
+        {
+          status: 502,
+        },
       );
     }
 

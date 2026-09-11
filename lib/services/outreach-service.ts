@@ -153,6 +153,40 @@ export class OutreachService {
     );
   }
 
+  async markFailed(
+    businessId: string,
+    messageId: string,
+    errorMessage: string,
+  ) {
+    const message =
+      await this.requireMessage(
+        businessId,
+        messageId,
+      );
+
+    if (
+      message.status !== "approved" &&
+      message.status !== "scheduled"
+    ) {
+      throw new Error(
+        "Only approved or scheduled outreach messages can be marked failed.",
+      );
+    }
+
+    const normalizedError =
+      errorMessage.trim().slice(0, 1000) ||
+      "Outreach delivery failed";
+
+    return this.outreach.updateMessage(
+      businessId,
+      messageId,
+      {
+        status: "failed",
+        error_message: normalizedError,
+      },
+    );
+  }
+
   private async requireMessage(
     businessId: string,
     messageId: string,
