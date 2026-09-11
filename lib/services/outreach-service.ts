@@ -51,6 +51,16 @@ export class OutreachService {
     });
   }
 
+  async findPendingDraftForContact(
+    businessId: string,
+    contactId: string,
+  ) {
+    return this.outreach.findPendingMessageForContact(
+      businessId,
+      contactId,
+    );
+  }
+
   async approveDraft(
     businessId: string,
     messageId: string,

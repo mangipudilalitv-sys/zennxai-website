@@ -156,6 +156,27 @@ export async function POST(
       );
     }
 
+    const existingPendingDraft =
+      await outreachService.findPendingDraftForContact(
+        businessId,
+        contact.id,
+      );
+
+    if (existingPendingDraft) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "A pending outreach draft already exists for this contact",
+          messageId:
+            existingPendingDraft.id,
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
     const completion =
       await openai.chat.completions.create(
         {

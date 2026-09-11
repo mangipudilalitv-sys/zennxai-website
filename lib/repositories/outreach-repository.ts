@@ -144,6 +144,29 @@ export class OutreachRepository extends BaseRepository {
     return data;
   }
 
+  async findPendingMessageForContact(
+    businessId: string,
+    contactId: string,
+  ) {
+    const { data, error } =
+      await this.table("outreach_messages")
+        .select("*")
+        .eq("business_id", businessId)
+        .eq("contact_id", contactId)
+        .eq("status", "pending_approval")
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  }
+
   async updateMessage(
     businessId: string,
     messageId: string,
