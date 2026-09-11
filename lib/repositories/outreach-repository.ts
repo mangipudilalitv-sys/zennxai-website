@@ -167,6 +167,60 @@ export class OutreachRepository extends BaseRepository {
     return data;
   }
 
+  async findActiveGenerationForContact(
+    businessId: string,
+    contactId: string,
+  ) {
+    const { data, error } =
+      await this.table("outreach_messages")
+        .select("*")
+        .eq("business_id", businessId)
+        .eq("contact_id", contactId)
+        .in("status", [
+          "draft",
+          "pending_approval",
+        ])
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  }
+
+  async failStaleDraftReservation(
+    businessId: string,
+    messageId: string,
+    staleBefore: string,
+  ) {
+    const { data, error } =
+      await this.table("outreach_messages")
+        .update({
+          status: "failed",
+          error_message:
+            "Generation reservation expired",
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq("business_id", businessId)
+        .eq("id", messageId)
+        .eq("status", "draft")
+        .lt("created_at", staleBefore)
+        .select()
+        .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  }
+
   async updateMessage(
     businessId: string,
     messageId: string,

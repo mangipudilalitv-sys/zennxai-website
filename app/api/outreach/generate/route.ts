@@ -28,6 +28,9 @@ const ALLOWED_OBJECTIVES = new Set([
 const MAX_INSTRUCTIONS_LENGTH = 1200;
 const MAX_GENERATED_BODY_LENGTH = 3000;
 
+const STALE_GENERATION_RESERVATION_MS =
+  10 * 60 * 1000;
+
 export async function POST(
   req: Request,
 ) {
@@ -271,19 +274,91 @@ export async function POST(
           : "";
 
       if (errorCode === "23505") {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              "An outreach generation is already active for this contact",
-          },
-          {
-            status: 409,
-          },
-        );
-      }
+        const activeGeneration =
+          await outreachService
+            .findActiveGenerationForContact(
+              businessId,
+              contact.id,
+            );
 
-      throw error;
+        const isStaleDraft =
+          activeGeneration?.status ===
+            "draft" &&
+          typeof activeGeneration.created_at ===
+            "string" &&
+          Date.now() -
+            new Date(
+              activeGeneration.created_at,
+            ).getTime() >
+            STALE_GENERATION_RESERVATION_MS;
+
+        if (isStaleDraft) {
+          const staleBefore =
+            new Date(
+              Date.now() -
+                STALE_GENERATION_RESERVATION_MS,
+            ).toISOString();
+
+          const released =
+            await outreachService
+              .failStaleGenerationReservation(
+                businessId,
+                activeGeneration.id,
+                staleBefore,
+              );
+
+          if (released) {
+            try {
+              reservation =
+                await outreachService
+                  .createGenerationReservation({
+                    business_id:
+                      businessId,
+                    contact_id:
+                      contact.id,
+                    channel,
+                    personalization_context:
+                      personalizationContext,
+                  });
+            } catch (retryError) {
+              const retryCode =
+                typeof retryError ===
+                    "object" &&
+                retryError !== null &&
+                "code" in retryError
+                  ? String(
+                      (
+                        retryError as {
+                          code?: unknown;
+                        }
+                      ).code || "",
+                    )
+                  : "";
+
+              if (retryCode !== "23505") {
+                throw retryError;
+              }
+            }
+          }
+        }
+
+        if (!reservation) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "An outreach generation is already active for this contact",
+              messageId:
+                activeGeneration?.id,
+            },
+            {
+              status: 409,
+            },
+          );
+        }
+      } else {
+        throw error;
+      }
     }
 
     const contactContext = {

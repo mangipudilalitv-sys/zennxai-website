@@ -122,6 +122,30 @@ export class OutreachService {
     );
   }
 
+  async findActiveGenerationForContact(
+    businessId: string,
+    contactId: string,
+  ) {
+    return this.outreach
+      .findActiveGenerationForContact(
+        businessId,
+        contactId,
+      );
+  }
+
+  async failStaleGenerationReservation(
+    businessId: string,
+    messageId: string,
+    staleBefore: string,
+  ) {
+    return this.outreach
+      .failStaleDraftReservation(
+        businessId,
+        messageId,
+        staleBefore,
+      );
+  }
+
   async findPendingDraftForContact(
     businessId: string,
     contactId: string,
