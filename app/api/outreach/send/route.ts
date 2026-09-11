@@ -293,40 +293,28 @@ export async function POST(
       );
     }
 
-    let providerResponse: Response;
-
-    try {
-      providerResponse =
-        await fetch(
-          "https://api.resend.com/emails",
-          {
-            method: "POST",
-            headers: {
-              Authorization:
-                `Bearer ${resendApiKey}`,
-              "Content-Type":
-                "application/json",
-              "Idempotency-Key":
-                `outreach/${message.id}`,
-            },
-            body: JSON.stringify({
-              from: fromEmail,
-              to: [recipient],
-              subject:
-                "Quick question from ZennX",
-              text: message.body,
-            }),
+    const providerResponse =
+      await fetch(
+        "https://api.resend.com/emails",
+        {
+          method: "POST",
+          headers: {
+            Authorization:
+              `Bearer ${resendApiKey}`,
+            "Content-Type":
+              "application/json",
+            "Idempotency-Key":
+              `outreach/${message.id}`,
           },
-        );
-    } catch (error) {
-      await outreachService.markFailed(
-        businessId,
-        messageId,
-        "Email provider request failed",
+          body: JSON.stringify({
+            from: fromEmail,
+            to: [recipient],
+            subject:
+              "Quick question from ZennX",
+            text: message.body,
+          }),
+        },
       );
-
-      throw error;
-    }
 
     const providerData =
       await providerResponse.json()
@@ -364,12 +352,6 @@ export async function POST(
       ).trim();
 
     if (!providerMessageId) {
-      await outreachService.markFailed(
-        businessId,
-        messageId,
-        "Email provider returned no message id",
-      );
-
       return NextResponse.json(
         {
           success: false,
